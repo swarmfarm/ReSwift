@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		162BEDCF29B82D0300F1BA2B /* BatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162BEDCE29B82D0300F1BA2B /* BatchStore.swift */; };
+		162BEDD029B82D0300F1BA2B /* BatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162BEDCE29B82D0300F1BA2B /* BatchStore.swift */; };
+		162BEDD129B82D0300F1BA2B /* BatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162BEDCE29B82D0300F1BA2B /* BatchStore.swift */; };
+		162BEDD229B82D0300F1BA2B /* BatchStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162BEDCE29B82D0300F1BA2B /* BatchStore.swift */; };
 		252982EE1C4FD21400281098 /* StoreType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 252982ED1C4FD21400281098 /* StoreType.swift */; };
 		252982EF1C4FD21400281098 /* StoreType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 252982ED1C4FD21400281098 /* StoreType.swift */; };
 		252982F01C4FD21400281098 /* StoreType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 252982ED1C4FD21400281098 /* StoreType.swift */; };
@@ -134,6 +138,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		162BEDCE29B82D0300F1BA2B /* BatchStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchStore.swift; sourceTree = "<group>"; };
 		252982ED1C4FD21400281098 /* StoreType.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = StoreType.swift; sourceTree = "<group>"; };
 		259737E91C2C611600869B8F /* StoreMiddlewareTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = StoreMiddlewareTests.swift; sourceTree = "<group>"; };
 		259737FA1C2C618A00869B8F /* TestFakes.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TestFakes.swift; sourceTree = "<group>"; };
@@ -341,6 +346,7 @@
 				625E66BB1C1FFC880027C288 /* StoreSubscriber.swift */,
 				252982ED1C4FD21400281098 /* StoreType.swift */,
 				81BCBECD1C63167A00AA4F03 /* Subscription.swift */,
+				162BEDCE29B82D0300F1BA2B /* BatchStore.swift */,
 			);
 			path = CoreTypes;
 			sourceTree = "<group>";
@@ -716,6 +722,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				162BEDD229B82D0300F1BA2B /* BatchStore.swift in Sources */,
 				25DBCF401C30C16000D63A58 /* Action.swift in Sources */,
 				25DBCF411C30C16000D63A58 /* Store.swift in Sources */,
 				25DBCF421C30C16000D63A58 /* Reducer.swift in Sources */,
@@ -736,6 +743,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				162BEDD129B82D0300F1BA2B /* BatchStore.swift in Sources */,
 				25DBCF571C30C19500D63A58 /* Action.swift in Sources */,
 				25DBCF581C30C19500D63A58 /* Store.swift in Sources */,
 				25DBCF591C30C19500D63A58 /* Reducer.swift in Sources */,
@@ -774,6 +782,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				162BEDD029B82D0300F1BA2B /* BatchStore.swift in Sources */,
 				25DBCF931C30C4F000D63A58 /* Action.swift in Sources */,
 				25DBCF941C30C4F000D63A58 /* Store.swift in Sources */,
 				25DBCF951C30C4F000D63A58 /* Reducer.swift in Sources */,
@@ -820,6 +829,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				162BEDCF29B82D0300F1BA2B /* BatchStore.swift in Sources */,
 				625E66C11C1FFC880027C288 /* StoreSubscriber.swift in Sources */,
 				625E66BD1C1FFC880027C288 /* Store.swift in Sources */,
 				625E66B31C1FFC830027C288 /* Coding.swift in Sources */,
