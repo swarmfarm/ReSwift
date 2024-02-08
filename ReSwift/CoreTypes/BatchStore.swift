@@ -6,7 +6,8 @@
 //  Modifed by Andrew Lipscomb on 01/03/23
 //  Copyright © 2015 ReSwift Community. All rights reserved.
 //
-
+import Foundation
+import Dispatch
 /**
  This class is the default implementation of the `StoreType` protocol. You will use this store in most
  of your applications. You shouldn't need to implement your own store.
