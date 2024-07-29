@@ -170,14 +170,16 @@ open class BatchStore<State>: StoreType {
     }
     let subscriptionQueue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
+
     func notifySubscriptions(previousState: State) {
         let group = DispatchGroup()
-            
-            subscriptions.forEach { subscription in
+        
+        subscriptionQueue.async(flags: .barrier) {
+            self.subscriptions.forEach { subscription in
                 group.enter()
-                subscriptionQueue.async {
+                DispatchQueue.global().async {
                     if subscription.subscriber == nil {
-                        DispatchQueue.main.async {
+                        self.subscriptionQueue.async(flags: .barrier) {
                             self.subscriptions.remove(subscription)
                         }
                     } else {
@@ -186,8 +188,9 @@ open class BatchStore<State>: StoreType {
                     group.leave()
                 }
             }
-            
-            group.wait()
+        }
+        
+        group.wait()
     }
 
     // swiftlint:disable:next identifier_name
