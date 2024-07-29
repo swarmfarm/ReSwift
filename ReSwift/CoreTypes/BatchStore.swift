@@ -177,13 +177,13 @@ open class BatchStore<State>: StoreType {
         
         let group = DispatchGroup()
         let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
-        
+        var subscriptionsToRemove =  Set<SubscriptionType>()
         subscriptions.forEach { subscription in
             group.enter()
             queue.async {
                 if subscription.subscriber == nil {
                     DispatchQueue.main.async { [weak self] in
-                        self?.subscriptions.remove(subscription)
+                        subscriptionsToRemove.insert(subscription)
                     }
                 } else {
                     subscription.newValues(oldState: previousState, newState: nextState)
@@ -193,6 +193,9 @@ open class BatchStore<State>: StoreType {
         }
         
         group.wait()
+        for subscription in subscriptionsToRemove {
+            subscriptions.remove(subscription)
+        }
     }
 
     // swiftlint:disable:next identifier_name
