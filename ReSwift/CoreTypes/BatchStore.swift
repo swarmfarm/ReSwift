@@ -257,7 +257,7 @@ open class BatchStore<State>: StoreType {
                             }
                             self._batchedActions = []
                             
-                            self.notifySubscriptions(previousState: currentState, concurrent: true)
+                            self.notifySubscriptions(previousState: currentState)
                             self._isBatching = false
                         }
                     )
