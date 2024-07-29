@@ -168,33 +168,35 @@ open class BatchStore<State>: StoreType {
         }
         #endif
     }
-    
+    let group = DispatchGroup()
+    let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
-    func notifySubscriptions(previousState: State) {
+    func notifySubscriptions(previousState: State, concurrent: Bool = false) {
         let nextState = self.state!
         let previousState = previousState
-        let group = DispatchGroup()
-        let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
+        
        
         var subscriptionsToRemove =  Set<SubscriptionType>()
         subscriptions.forEach { subscription in
-            group.enter()
-            queue.async {
-                if subscription.subscriber == nil {
-                    subscriptionsToRemove.insert(subscription)
-                    group.leave()
-                } else {
-                    DispatchQueue.global().async {
+            if subscription.subscriber == nil {
+                subscriptionsToRemove.insert(subscription)
+            }
+            if concurrent {
+                group.enter()
+                queue.async { [weak self] in
+                    if subscription.subscriber != nil {
                         subscription.newValues(oldState: previousState, newState: nextState)
-                        group.leave()
                     }
-                   
+                    self?.group.leave()
                 }
-               
+            }
+            else {
+                subscription.newValues(oldState: previousState, newState: nextState)
             }
         }
-        
-        group.wait()
+        if concurrent {
+            group.wait()
+        }
         for subscription in subscriptionsToRemove {
             subscriptions.remove(subscription)
         }
@@ -218,12 +220,12 @@ open class BatchStore<State>: StoreType {
         state = newState
     }
 
-    open func dispatch(_ action: Action) {
+    open func dispatch(_ action: Action, concurrent: Bool = false) {
         guard let currentState = state else {
             return
         }
         dispatchFunction(action)
-        notifySubscriptions(previousState: currentState)
+        notifySubscriptions(previousState: currentState, concurrent: concurrent)
     }
     
     open func dispatchBatched(_ action: Action) {
