@@ -168,24 +168,24 @@ open class BatchStore<State>: StoreType {
         }
         #endif
     }
-
+    let group = DispatchGroup()
+    let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
     func notifySubscriptions(previousState: State) {
         let nextState = self.state!
         let previousState = previousState
         
-        let group = DispatchGroup()
-        let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
+       
         var subscriptionsToRemove =  Set<SubscriptionType>()
         subscriptions.forEach { subscription in
             group.enter()
-            queue.async {
+            queue.async { [weak self] in
                 if subscription.subscriber == nil {
                     subscriptionsToRemove.insert(subscription)
                 } else {
                     subscription.newValues(oldState: previousState, newState: nextState)
                 }
-                group.leave()
+                self?.group.leave()
             }
         }
         
