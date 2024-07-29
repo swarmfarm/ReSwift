@@ -14,6 +14,10 @@
  argument.
  */
 open class Store<State>: StoreType {
+    public func dispatch(_ action: any Action, concurrent: Bool) {
+        self.dispatchFunction(action)
+    }
+    
   
 
     typealias SubscriptionType = SubscriptionBox<State>
@@ -38,7 +42,7 @@ open class Store<State>: StoreType {
 
     private var isDispatching = Synchronized<Bool>(false)
 
-    /// Indicates if new subscriptions attempt to apply `skipRepeats` 
+    /// Indicates if new subscriptions attempt to apply `skipRepeats`
     /// by default.
     fileprivate let subscriptionsAutomaticallySkipRepeats: Bool
 
@@ -53,12 +57,12 @@ open class Store<State>: StoreType {
     /// Middleware is applied in the order in which it is passed into this constructor.
     ///
     /// - parameter reducer: Main reducer that processes incoming actions.
-    /// - parameter state: Initial state, if any. Can be `nil` and will be 
+    /// - parameter state: Initial state, if any. Can be `nil` and will be
     ///   provided by the reducer in that case.
-    /// - parameter middleware: Ordered list of action pre-processors, acting 
+    /// - parameter middleware: Ordered list of action pre-processors, acting
     ///   before the root reducer.
-    /// - parameter automaticallySkipsRepeats: If `true`, the store will attempt 
-    ///   to skip idempotent state updates when a subscriber's state type 
+    /// - parameter automaticallySkipsRepeats: If `true`, the store will attempt
+    ///   to skip idempotent state updates when a subscriber's state type
     ///   implements `Equatable`. Defaults to `true`.
     public required init(
         reducer: @escaping Reducer<State>,
@@ -234,7 +238,7 @@ extension Store {
 }
 
 extension Store where State: Equatable {
-	public func subscribe<S: StoreSubscriber>(_ subscriber: S)
+    public func subscribe<S: StoreSubscriber>(_ subscriber: S)
         where S.StoreSubscriberStateType == State {
             guard subscriptionsAutomaticallySkipRepeats else {
                 subscribe(subscriber, transform: nil)
