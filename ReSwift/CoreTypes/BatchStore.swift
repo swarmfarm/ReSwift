@@ -172,21 +172,23 @@ open class BatchStore<State>: StoreType {
 
 
     func notifySubscriptions(previousState: State) {
-        let group = DispatchGroup()
+        let nextState = self.state!
+        let previousState = previousState
         
-        subscriptionQueue.async(flags: .barrier) {
-            self.subscriptions.forEach { subscription in
-                group.enter()
-                DispatchQueue.global().async {
-                    if subscription.subscriber == nil {
-                        self.subscriptionQueue.async(flags: .barrier) {
-                            self.subscriptions.remove(subscription)
-                        }
-                    } else {
-                        subscription.newValues(oldState: previousState, newState: self.state)
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
+        
+        subscriptions.forEach { subscription in
+            group.enter()
+            queue.async {
+                if subscription.subscriber == nil {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.subscriptions.remove(subscription)
                     }
-                    group.leave()
+                } else {
+                    subscription.newValues(oldState: previousState, newState: nextState)
                 }
+                group.leave()
             }
         }
         
