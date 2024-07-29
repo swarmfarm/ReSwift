@@ -14,6 +14,7 @@
  argument.
  */
 open class Store<State>: StoreType {
+  
 
     typealias SubscriptionType = SubscriptionBox<State>
 

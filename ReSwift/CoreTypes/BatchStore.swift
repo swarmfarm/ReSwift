@@ -16,6 +16,12 @@ import Dispatch
  argument.
  */
 open class BatchStore<State>: StoreType {
+   
+    
+    public func dispatch(_ action: any Action) {
+        dispatch(action, concurrent: false)
+    }
+    
     
     typealias SubscriptionType = SubscriptionBox<State>
 
