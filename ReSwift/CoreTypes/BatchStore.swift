@@ -8,6 +8,7 @@
 //
 import Foundation
 import Dispatch
+import os
 /**
  This class is the default implementation of the `StoreType` protocol. You will use this store in most
  of your applications. You shouldn't need to implement your own store.
@@ -168,13 +169,19 @@ open class BatchStore<State>: StoreType {
         }
         #endif
     }
-    
+    private let log = OSLog(subsystem: "com.swarmview.subsystem", category: "MapItemGenerator")
+
     func notifySubscriptions(previousState: State) {
         subscriptions.forEach {
             if $0.subscriber == nil {
                 subscriptions.remove($0)
             } else {
+                let signpostID = OSSignpostID(log: log)
+                let subscriberTypeName = String(describing: type(of: $0.subscriber))
+                os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                 $0.newValues(oldState: previousState, newState: state)
+                os_signpost(.end, log: log, name: "subscription.newValue", signpostID: signpostID, "%{public}s", subscriberTypeName)
+
             }
         }
     }
