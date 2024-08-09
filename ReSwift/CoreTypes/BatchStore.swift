@@ -177,36 +177,46 @@ open class BatchStore<State>: StoreType {
     let group = DispatchGroup()
     let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
-    func notifySubscriptions(previousState: State, concurrent: Bool = false) {
-        let nextState = self.state!
-        let previousState = previousState
-        
+    private var isRunningInGroup = false
        
-        var subscriptionsToRemove =  Set<SubscriptionType>()
-        subscriptions.forEach { subscription in
-            if subscription.subscriber == nil {
-                subscriptionsToRemove.insert(subscription)
-            }
-            if concurrent {
-                group.enter()
-                queue.async { [weak self] in
-                    if subscription.subscriber != nil {
-                        subscription.newValues(oldState: previousState, newState: nextState)
-                    }
-                    self?.group.leave()
-                }
-            }
-            else {
-                subscription.newValues(oldState: previousState, newState: nextState)
-            }
-        }
-        if concurrent {
-            group.wait()
-        }
-        for subscription in subscriptionsToRemove {
-            subscriptions.remove(subscription)
-        }
-    }
+   func notifySubscriptions(previousState: State, concurrent: Bool = false) {
+       let nextState = self.state!
+       let previousState = previousState
+       
+       var subscriptionsToRemove = Set<SubscriptionType>()
+       
+       let shouldRunConcurrently = concurrent && !isRunningInGroup
+       
+       if shouldRunConcurrently {
+           isRunningInGroup = true
+       }
+       
+       subscriptions.forEach { subscription in
+           if subscription.subscriber == nil {
+               subscriptionsToRemove.insert(subscription)
+           }
+           if shouldRunConcurrently {
+               group.enter()
+               queue.async { [weak self] in
+                   if subscription.subscriber != nil {
+                       subscription.newValues(oldState: previousState, newState: nextState)
+                   }
+                   self?.group.leave()
+               }
+           } else {
+               subscription.newValues(oldState: previousState, newState: nextState)
+           }
+       }
+       
+       if shouldRunConcurrently {
+           group.wait()
+           isRunningInGroup = false
+       }
+       
+       for subscription in subscriptionsToRemove {
+           subscriptions.remove(subscription)
+       }
+   }
 
     // swiftlint:disable:next identifier_name
     open func _defaultDispatch(action: Action) {
