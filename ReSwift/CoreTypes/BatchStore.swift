@@ -175,7 +175,7 @@ open class BatchStore<State>: StoreType {
     }
     let log = OSLog(subsystem: "com.reswift", category: "notify")
 
-    let group = DispatchGroup()
+
     let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
     private var isRunningInGroup = false
@@ -196,7 +196,10 @@ open class BatchStore<State>: StoreType {
                isRunningInGroup = false
            }
        }
-       
+       let semaphore = DispatchSemaphore(value: 0)
+       var completedTasks = 0
+       let totalTasks = subscriptions.count
+
        subscriptions.forEach { subscription in
            if subscription.subscriber == nil {
                subscriptionsToRemove.insert(subscription)
@@ -207,14 +210,14 @@ open class BatchStore<State>: StoreType {
                os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
 
                if shouldRunConcurrently {
-                   group.enter()
                    queue.async { [weak self] in
                        if subscription.subscriber != nil {
-                          
-                          
                            subscription.newValues(oldState: previousState, newState: nextState)
                        }
-                       self?.group.leave()
+                       if completedTasks == totalTasks - 1 {
+                           semaphore.signal()
+                       }
+                       completedTasks += 1
                    }
                } else {
                    subscription.newValues(oldState: previousState, newState: nextState)
@@ -225,7 +228,7 @@ open class BatchStore<State>: StoreType {
        }
        
        if shouldRunConcurrently {
-           group.wait()
+           semaphore.wait()
            
        }
        

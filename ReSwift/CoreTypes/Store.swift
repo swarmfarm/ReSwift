@@ -19,32 +19,79 @@ open class Store<State>: StoreType {
 
     typealias SubscriptionType = SubscriptionBox<State>
 
-  
+    let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
+
+    private var isRunningInGroup = false
+    
     private(set) public var state: State! {
         didSet {
-            guard let nextState = self.state else {
-                 return
-            }
+            let nextState = self.state!
             let previousState = oldValue ?? nextState
             
             var subscriptionsToRemove = Set<SubscriptionType>()
             
-         
+            let shouldRunConcurrently = !isRunningInGroup
+            
+            if shouldRunConcurrently {
+                isRunningInGroup = true
+            }
+            defer {
+                if shouldRunConcurrently {
+                    isRunningInGroup = false
+                }
+            }
+            let semaphore = DispatchSemaphore(value: 0)
+            var completedTasks = 0
+            let totalTasks = subscriptions.count
+            let completedCountLock = NSLock()
+            
+            func completedTask() {
+                completedCountLock.lock()
+                defer {
+                    completedCountLock.unlock()
+                }
+                completedTasks += 1
+                if completedTasks == totalTasks {
+                    semaphore.signal()
+                }
+                
+            }
+
             subscriptions.forEach { subscription in
                 if subscription.subscriber == nil {
                     subscriptionsToRemove.insert(subscription)
+                    completedTask()
                 }
-              
                 else {
-                    subscription.newValues(oldState: previousState, newState: nextState)
+                    
+                 
 
+                    if shouldRunConcurrently {
+                        queue.async { [weak self] in
+                            if subscription.subscriber != nil {
+                                subscription.newValues(oldState: previousState, newState: nextState)
+                            }
+                            if completedTasks == totalTasks - 1 {
+                                semaphore.signal()
+                            }
+                            completedTask()
+                        }
+                    } else {
+                        subscription.newValues(oldState: previousState, newState: nextState)
+                    }
+                    
                 }
-                        
-                      
+
+            }
+            if subscriptions.count == 0 {
+                semaphore.signal()
+            }
+            
+            if shouldRunConcurrently {
+                semaphore.wait()
                 
             }
             
-        
             for subscription in subscriptionsToRemove {
                 subscriptions.remove(subscription)
             }
