@@ -243,6 +243,9 @@ open class Store<State>: StoreType {
 
         state = newState
     }
+    open func dispatch(_ action: Action, concurrent: Bool = false) {
+        dispatchFunction(action)
+    }
 
     open func dispatch(_ action: Action) {
         dispatchFunction(action)
@@ -254,6 +257,8 @@ open class Store<State>: StoreType {
             dispatch(action)
         }
     }
+    
+    
 
     @available(*, deprecated, message: "Deprecated in favor of https://github.com/ReSwift/ReSwift-Thunk")
     open func dispatch(_ asyncActionCreatorProvider: @escaping AsyncActionCreator) {

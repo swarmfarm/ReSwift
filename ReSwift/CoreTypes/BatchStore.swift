@@ -180,13 +180,13 @@ open class BatchStore<State>: StoreType {
 
     private var isRunningInGroup = false
        
-   func notifySubscriptions(previousState: State) {
+    func notifySubscriptions(previousState: State, concurrent: Bool = true) {
        let nextState = self.state!
        let previousState = previousState
        
        var subscriptionsToRemove = Set<SubscriptionType>()
        
-       let shouldRunConcurrently = !isRunningInGroup
+       let shouldRunConcurrently = concurrent && !isRunningInGroup
        
        if shouldRunConcurrently {
            isRunningInGroup = true
@@ -212,7 +212,9 @@ open class BatchStore<State>: StoreType {
            }
            
        }
-
+       if subscriptions.count == 0 {
+           semaphore.signal()
+       }
        subscriptions.forEach { subscription in
            if subscription.subscriber == nil {
                subscriptionsToRemove.insert(subscription)
@@ -227,21 +229,17 @@ open class BatchStore<State>: StoreType {
                        if subscription.subscriber != nil {
                            subscription.newValues(oldState: previousState, newState: nextState)
                        }
-                       if completedTasks == totalTasks - 1 {
-                           semaphore.signal()
-                       }
                        completedTask()
                    }
                } else {
                    subscription.newValues(oldState: previousState, newState: nextState)
+                   completedTask()
                }
                
            }
 
        }
-       if subscriptions.count == 0 {
-           semaphore.signal()
-       }
+      
        
        if shouldRunConcurrently {
            semaphore.wait()
@@ -269,14 +267,20 @@ open class BatchStore<State>: StoreType {
 
         state = newState
     }
-
-    public func dispatch(_ action: any Action) {
+    
+    public func dispatch(_ action: Action, concurrent: Bool = true) {
         guard let currentState = state else {
             return
         }
         dispatchFunction(action)
-        notifySubscriptions(previousState: currentState)
+        notifySubscriptions(previousState: currentState, concurrent: true)
     }
+
+  
+    public func dispatch(_ action: any Action) {
+        dispatch(action, concurrent: true)
+    }
+    
     
     open func dispatchBatched(_ action: Action) {
         batchingQueue.async { [weak self] in
