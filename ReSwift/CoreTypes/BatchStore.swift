@@ -198,25 +198,26 @@ open class BatchStore<State>: StoreType {
            if subscription.subscriber == nil {
                subscriptionsToRemove.insert(subscription)
            }
-           
-           let signpostID = OSSignpostID(log: log)
-           let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
-           os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+           else {
+               let signpostID = OSSignpostID(log: log)
+               let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
+               os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
 
-           if shouldRunConcurrently {
-               group.enter()
-               queue.async { [weak self] in
-                   if subscription.subscriber != nil {
-                      
-                      
-                       subscription.newValues(oldState: previousState, newState: nextState)
+               if shouldRunConcurrently {
+                   group.enter()
+                   queue.async { [weak self] in
+                       if subscription.subscriber != nil {
+                          
+                          
+                           subscription.newValues(oldState: previousState, newState: nextState)
+                       }
+                       self?.group.leave()
                    }
-                   self?.group.leave()
+               } else {
+                   subscription.newValues(oldState: previousState, newState: nextState)
                }
-           } else {
-               subscription.newValues(oldState: previousState, newState: nextState)
+               os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
            }
-           os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
 
        }
        
