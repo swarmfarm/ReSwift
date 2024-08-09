@@ -175,81 +175,65 @@ open class BatchStore<State>: StoreType {
     }
     let log = OSLog(subsystem: "com.reswift", category: "notify")
 
-
+    let group = DispatchGroup()
     let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
     private var isRunningInGroup = false
        
     func notifySubscriptions(previousState: State, concurrent: Bool = true) {
-       let nextState = self.state!
-       let previousState = previousState
-       
-       var subscriptionsToRemove = Set<SubscriptionType>()
-       
-       let shouldRunConcurrently = concurrent && !isRunningInGroup
-       
-       if shouldRunConcurrently {
-           isRunningInGroup = true
-       }
-       defer {
-           if shouldRunConcurrently {
-               isRunningInGroup = false
-           }
-       }
-       let semaphore = DispatchSemaphore(value: 0)
-       var completedTasks = 0
-       let totalTasks = subscriptions.count
-       let completedCountLock = NSLock()
-       
-       func completedTask() {
-           completedCountLock.lock()
-           defer {
-               completedCountLock.unlock()
-           }
-           completedTasks += 1
-           if completedTasks == totalTasks {
-               semaphore.signal()
-           }
-           
-       }
-       if subscriptions.count == 0 {
-           semaphore.signal()
-       }
-       subscriptions.forEach { subscription in
-           if subscription.subscriber == nil {
-               subscriptionsToRemove.insert(subscription)
-               completedTask()
-           }
-           else {
-               
+        let nextState = self.state!
+        let previousState = previousState
+        
+        var subscriptionsToRemove = Set<SubscriptionType>()
+        
+        let shouldRunConcurrently = !isRunningInGroup
+        
+        if shouldRunConcurrently {
+            isRunningInGroup = true
+        }
+        defer {
+            if shouldRunConcurrently {
+                isRunningInGroup = false
+            }
+        }
+        
+        subscriptions.forEach { subscription in
+            if subscription.subscriber == nil {
+                subscriptionsToRemove.insert(subscription)
+            }
+            else {
+                let signpostID = OSSignpostID(log: log)
+                let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
+                os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                
+                if shouldRunConcurrently {
+                    group.enter()
+                    queue.async { [weak self] in
+                        if subscription.subscriber != nil {
+                            
+                            
+                            subscription.newValues(oldState: previousState, newState: nextState)
+                        }
+                        self?.group.leave()
+                    }
+                } else {
+                    subscription.newValues(oldState: previousState, newState: nextState)
+                }
+                os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+            }
             
-
-               if shouldRunConcurrently {
-                   queue.async { [weak self] in
-                       if subscription.subscriber != nil {
-                           subscription.newValues(oldState: previousState, newState: nextState)
-                       }
-                       completedTask()
-                   }
-               } else {
-                   subscription.newValues(oldState: previousState, newState: nextState)
-                   completedTask()
-               }
-               
-           }
-
-       }
-      
-       
-       if shouldRunConcurrently {
-           semaphore.wait()
-           
-       }
-       
-       for subscription in subscriptionsToRemove {
-           subscriptions.remove(subscription)
-       }
-   }
+        }
+        
+        if shouldRunConcurrently {
+            group.wait()
+            
+        }
+        
+        for subscription in subscriptionsToRemove {
+            subscriptions.remove(subscription)
+        }
+        
+    }
     // swiftlint:disable:next identifier_name
     open func _defaultDispatch(action: Action) {
         guard !isDispatching.value else {
