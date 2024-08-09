@@ -193,6 +193,11 @@ open class BatchStore<State>: StoreType {
        if shouldRunConcurrently {
            isRunningInGroup = true
        }
+       defer {
+           if shouldRunConcurrently {
+               isRunningInGroup = false
+           }
+       }
        
        subscriptions.forEach { subscription in
            if subscription.subscriber == nil {
@@ -223,7 +228,7 @@ open class BatchStore<State>: StoreType {
        
        if shouldRunConcurrently {
            group.wait()
-           isRunningInGroup = false
+           
        }
        
        for subscription in subscriptionsToRemove {
