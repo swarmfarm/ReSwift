@@ -177,7 +177,7 @@ open class BatchStore<State>: StoreType {
                 subscriptions.remove($0)
             } else {
                 let signpostID = OSSignpostID(log: log)
-                let subscriberTypeName = String(describing: type(of: $0.subscriber?.idKey ?? "none"))
+                let subscriberTypeName =  $0.subscriber?.idKey ?? "none"
                 os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                 $0.newValues(oldState: previousState, newState: state)
                 os_signpost(.end, log: log, name: "subscription.newValue", signpostID: signpostID, "%{public}s", subscriberTypeName)
