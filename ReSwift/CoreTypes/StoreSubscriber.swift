@@ -9,6 +9,7 @@
 public protocol AnyStoreSubscriber: AnyObject {
     // swiftlint:disable:next identifier_name
     func _newState(state: Any)
+    var idKey: String {get set}
 }
 
 public protocol StoreSubscriber: AnyStoreSubscriber {
@@ -16,6 +17,7 @@ public protocol StoreSubscriber: AnyStoreSubscriber {
 
     func newState(state: StoreSubscriberStateType)
 }
+
 
 extension StoreSubscriber {
     // swiftlint:disable:next identifier_name

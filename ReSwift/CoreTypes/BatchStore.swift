@@ -8,6 +8,7 @@
 //
 import Foundation
 import Dispatch
+import os
 /**
  This class is the default implementation of the `StoreType` protocol. You will use this store in most
  of your applications. You shouldn't need to implement your own store.
@@ -174,6 +175,7 @@ open class BatchStore<State>: StoreType {
         }
         #endif
     }
+
     let group = DispatchGroup()
     let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
@@ -195,6 +197,9 @@ open class BatchStore<State>: StoreType {
            if subscription.subscriber == nil {
                subscriptionsToRemove.insert(subscription)
            }
+           let signpostID = OSSignpostID(log: log)
+           let subscriberTypeName = String(describing: type(of: subscription.subscriber?.idKey ?? "none"))
+           os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
            if shouldRunConcurrently {
                group.enter()
                queue.async { [weak self] in
@@ -206,6 +211,7 @@ open class BatchStore<State>: StoreType {
            } else {
                subscription.newValues(oldState: previousState, newState: nextState)
            }
+           os_signpost(.end, log: log, name: "subscription.newValue", signpostID: signpostID, "%{public}s", subscriberTypeName)
        }
        
        if shouldRunConcurrently {
@@ -217,7 +223,6 @@ open class BatchStore<State>: StoreType {
            subscriptions.remove(subscription)
        }
    }
-
     // swiftlint:disable:next identifier_name
     open func _defaultDispatch(action: Action) {
         guard !isDispatching.value else {
