@@ -22,14 +22,53 @@ open class Store<State>: StoreType {
 
     typealias SubscriptionType = SubscriptionBox<State>
 
+    let group = DispatchGroup()
+    let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
+
+    private var isRunningInGroup = false
+       
+  
     private(set) public var state: State! {
         didSet {
-            subscriptions.forEach {
-                if $0.subscriber == nil {
-                    subscriptions.remove($0)
-                } else {
-                    $0.newValues(oldState: oldValue, newState: state)
+            guard let nextState = self.state else {
+                 return
+            }
+            let previousState = oldValue ?? nextState
+            
+            var subscriptionsToRemove = Set<SubscriptionType>()
+            
+            let shouldRunConcurrently =  !isRunningInGroup
+            
+            if shouldRunConcurrently {
+                isRunningInGroup = true
+            }
+            
+            subscriptions.forEach { subscription in
+                if subscription.subscriber == nil {
+                    subscriptionsToRemove.insert(subscription)
                 }
+                
+                if shouldRunConcurrently {
+                    group.enter()
+                    queue.async { [weak self] in
+                        
+                        subscription.newValues(oldState: previousState, newState: nextState)
+                        
+                        self?.group.leave()
+                    }
+                } else {
+                    subscription.newValues(oldState: previousState, newState: nextState)
+                }
+                
+            }
+            
+            if shouldRunConcurrently {
+                group.wait()
+                isRunningInGroup = false
+            }
+            
+            for subscription in subscriptionsToRemove {
+                subscriptions.remove(subscription)
             }
         }
     }

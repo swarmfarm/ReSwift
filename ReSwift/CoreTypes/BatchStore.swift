@@ -181,13 +181,13 @@ open class BatchStore<State>: StoreType {
 
     private var isRunningInGroup = false
        
-   func notifySubscriptions(previousState: State, concurrent: Bool = false) {
+   func notifySubscriptions(previousState: State) {
        let nextState = self.state!
        let previousState = previousState
        
        var subscriptionsToRemove = Set<SubscriptionType>()
        
-       let shouldRunConcurrently = concurrent && !isRunningInGroup
+       let shouldRunConcurrently = !isRunningInGroup
        
        if shouldRunConcurrently {
            isRunningInGroup = true
@@ -197,9 +197,8 @@ open class BatchStore<State>: StoreType {
            if subscription.subscriber == nil {
                subscriptionsToRemove.insert(subscription)
            }
-           let signpostID = OSSignpostID(log: log)
-           let subscriberTypeName = String(describing: type(of: subscription.subscriber?.idKey ?? "none"))
-           os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+           
+           
            if shouldRunConcurrently {
                group.enter()
                queue.async { [weak self] in
@@ -211,7 +210,7 @@ open class BatchStore<State>: StoreType {
            } else {
                subscription.newValues(oldState: previousState, newState: nextState)
            }
-           os_signpost(.end, log: log, name: "subscription.newValue", signpostID: signpostID, "%{public}s", subscriberTypeName)
+           
        }
        
        if shouldRunConcurrently {
@@ -246,7 +245,7 @@ open class BatchStore<State>: StoreType {
             return
         }
         dispatchFunction(action)
-        notifySubscriptions(previousState: currentState, concurrent: concurrent)
+        notifySubscriptions(previousState: currentState)
     }
     
     open func dispatchBatched(_ action: Action) {

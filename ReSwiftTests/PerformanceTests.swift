@@ -15,13 +15,25 @@ final class PerformanceTests: XCTestCase {
     )
 
     class MockSubscriber: StoreSubscriber {
+        typealias StoreSubscriberStateType = MockState
         func newState(state: MockState) {
             // Do nothing
         }
     }
 
+    func subscribeAll() {
+        self.subscribers.forEach  { subscriber in
+            store.subscribe(subscriber) { mockState in
+                mockState.select { state in
+                        //            block for 20ms
+                        usleep(200)
+                        return MockState()
+                    }
+            }
+        }
+    }
     func testNotify() {
-        self.subscribers.forEach(self.store.subscribe)
+        subscribeAll()
         self.measure {
             self.store.dispatch(MockAction())
         }
@@ -29,7 +41,7 @@ final class PerformanceTests: XCTestCase {
 
     func testSubscribe() {
         self.measure {
-            self.subscribers.forEach(self.store.subscribe)
+            subscribeAll()
         }
     }
 }
