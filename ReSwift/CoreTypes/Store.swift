@@ -13,6 +13,9 @@
  reducers you can combine them by initializing a `MainReducer` with all of your reducers as an
  argument.
  */
+import Dispatch
+import Foundation
+import os
 open class Store<State>: StoreType {
   
   
@@ -22,7 +25,7 @@ open class Store<State>: StoreType {
     let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
 
     private var isRunningInGroup = false
-    
+    let completedCountLock = NSLock()
     private(set) public var state: State! {
         didSet {
             let nextState = self.state!
@@ -43,7 +46,7 @@ open class Store<State>: StoreType {
             let semaphore = DispatchSemaphore(value: 0)
             var completedTasks = 0
             let totalTasks = subscriptions.count
-            let completedCountLock = NSLock()
+           
             
             func completedTask() {
                 completedCountLock.lock()

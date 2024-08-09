@@ -199,15 +199,28 @@ open class BatchStore<State>: StoreType {
        let semaphore = DispatchSemaphore(value: 0)
        var completedTasks = 0
        let totalTasks = subscriptions.count
+       let completedCountLock = NSLock()
+       
+       func completedTask() {
+           completedCountLock.lock()
+           defer {
+               completedCountLock.unlock()
+           }
+           completedTasks += 1
+           if completedTasks == totalTasks {
+               semaphore.signal()
+           }
+           
+       }
 
        subscriptions.forEach { subscription in
            if subscription.subscriber == nil {
                subscriptionsToRemove.insert(subscription)
+               completedTask()
            }
            else {
-               let signpostID = OSSignpostID(log: log)
-               let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
-               os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+               
+            
 
                if shouldRunConcurrently {
                    queue.async { [weak self] in
@@ -217,14 +230,17 @@ open class BatchStore<State>: StoreType {
                        if completedTasks == totalTasks - 1 {
                            semaphore.signal()
                        }
-                       completedTasks += 1
+                       completedTask()
                    }
                } else {
                    subscription.newValues(oldState: previousState, newState: nextState)
                }
-               os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+               
            }
 
+       }
+       if subscriptions.count == 0 {
+           semaphore.signal()
        }
        
        if shouldRunConcurrently {
