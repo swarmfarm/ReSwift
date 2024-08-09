@@ -14,10 +14,7 @@
  argument.
  */
 open class Store<State>: StoreType {
-    public func dispatch(_ action: any Action, concurrent: Bool) {
-        self.dispatchFunction(action)
-    }
-    
+  
   
 
     typealias SubscriptionType = SubscriptionBox<State>

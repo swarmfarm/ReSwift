@@ -110,41 +110,6 @@ public protocol StoreType: DispatchingStoreType {
      */
     func dispatch(_ actionCreator: ActionCreator)
     
-    /**
-     
-     If Concurrent this will lock and wait. Do not call resursivelty if concurrent
-     
-     Dispatches an action creator to the store. Action creators are functions that generate
-     actions. They are called by the store and receive the current state of the application
-     and a reference to the store as their input.
-
-     Based on that input the action creator can either return an action or not. Alternatively
-     the action creator can also perform an asynchronous operation and dispatch a new action
-     at the end of it.
-
-     Example of an action creator:
-
-     ```
-     func deleteNote(noteID: Int) -> ActionCreator {
-        return { state, store in
-            // only delete note if editing is enabled
-            if (state.editingEnabled == true) {
-                return NoteDataAction.DeleteNote(noteID)
-            } else {
-                return nil
-            }
-        }
-     }
-     ```
-
-     This action creator can then be dispatched as following:
-
-     ```
-     store.dispatch( noteActionCreator.deleteNote(3) )
-     ```
-     */
-    func dispatch(_ action: Action, concurrent: Bool)
-
 
     /**
      Dispatches an async action creator to the store. An async action creator generates an

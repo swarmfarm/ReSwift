@@ -19,9 +19,7 @@ import os
 open class BatchStore<State>: StoreType {
    
     
-    public func dispatch(_ action: any Action) {
-        dispatch(action, concurrent: false)
-    }
+   
     
     
     typealias SubscriptionType = SubscriptionBox<State>
@@ -253,7 +251,7 @@ open class BatchStore<State>: StoreType {
         state = newState
     }
 
-    open func dispatch(_ action: Action, concurrent: Bool = false) {
+    public func dispatch(_ action: any Action) {
         guard let currentState = state else {
             return
         }
