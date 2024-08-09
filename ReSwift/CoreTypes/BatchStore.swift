@@ -273,7 +273,7 @@ open class BatchStore<State>: StoreType {
             return
         }
         dispatchFunction(action)
-        notifySubscriptions(previousState: currentState, concurrent: true)
+        notifySubscriptions(previousState: currentState, concurrent: concurrent)
     }
 
   
