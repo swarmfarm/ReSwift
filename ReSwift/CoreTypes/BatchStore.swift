@@ -164,15 +164,11 @@ open class BatchStore<State>: StoreType {
     let log = OSLog(subsystem: "com.reswift", category: "notify")
 
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
-        #if swift(>=5.0)
-        if let index = subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
-            subscriptions.remove(at: index)
+        runSync {
+            if let index = self.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
+                self.subscriptions.remove(at: index)
+            }
         }
-        #else
-        if let index = subscriptions.index(where: { return $0.subscriber === subscriber }) {
-            subscriptions.remove(at: index)
-        }
-        #endif
     }
 
     let group = DispatchGroup()
@@ -297,55 +293,32 @@ open class BatchStore<State>: StoreType {
             block()
         }
         
-        func runSync(_ block: @escaping () -> Void) {
-            if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
-                queue.sync(execute: block)
-            }
-            else {
-                block()
-            }
-        }
-        
-        func subscribe<SelectedState: Equatable, S: StoreSubscriber>(
-            _ subscriber: S,
-            transform: ((ReSwift.Subscription<State>) -> ReSwift.Subscription<SelectedState>)?
-        ) where S.StoreSubscriberStateType == SelectedState
-        {
-            let subscriberTypeName = String(describing: type(of: subscriber))
-                
-            // Start the signpost interval
-            let signpostID = OSSignpostID(log: log)
-            os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
-            
-            runSync {
-                self.subscribe(subscriber, transform: transform)
-            }
-            
-            // End the signpost interval
-            os_signpost(.end, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
-        }
-        
-        func unsubscribe(_ subscriber: AnyStoreSubscriber) {
-            runSync {
-                self.unsubscribe(subscriber)
-            }
-        }
-        func dispatchAsync(_ action: Action, concurrent: Bool = true) {
-            queue.async(execute: {
-                let subscriberTypeName = String(describing: type(of: action))
-                    
-                // Start the signpost interval
-                let signpostID = OSSignpostID(log: self.log)
-                os_signpost(.begin, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
-                self.dispatch(action, concurrent: concurrent)
-                // End the signpost interval
-                os_signpost(.end, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
-            })
-        }
+       
 //        sendToAnalytics()
     }
     
-    
+    func runSync(_ block: @escaping () -> Void) {
+        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
+            queue.sync(execute: block)
+        }
+        else {
+            block()
+        }
+    }
+  
+   
+    func dispatchAsync(_ action: Action, concurrent: Bool = true) {
+        queue.async(execute: {
+            let subscriberTypeName = String(describing: type(of: action))
+                
+            // Start the signpost interval
+            let signpostID = OSSignpostID(log: self.log)
+            os_signpost(.begin, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
+            self.dispatch(action, concurrent: concurrent)
+            // End the signpost interval
+            os_signpost(.end, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
+        })
+    }
     open func dispatchBatched(_ action: Action) {
         batchingQueue.async { [weak self] in
             guard let self = self else {
@@ -397,14 +370,26 @@ extension BatchStore {
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
         ) where S.StoreSubscriberStateType == SelectedState
     {
-        let originalSubscription = Subscription<State>()
+        let subscriberTypeName = String(describing: type(of: subscriber))
+            
+        // Start the signpost interval
+        let signpostID = OSSignpostID(log: log)
+        os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
+        
+        runSync {
+            let originalSubscription = Subscription<State>()
 
-        var transformedSubscription = transform?(originalSubscription)
-        if subscriptionsAutomaticallySkipRepeats {
-            transformedSubscription = transformedSubscription?.skipRepeats()
+            var transformedSubscription = transform?(originalSubscription)
+            if self.subscriptionsAutomaticallySkipRepeats {
+                transformedSubscription = transformedSubscription?.skipRepeats()
+            }
+            self._subscribe(subscriber, originalSubscription: originalSubscription,
+                       transformedSubscription: transformedSubscription)
         }
-        _subscribe(subscriber, originalSubscription: originalSubscription,
-                   transformedSubscription: transformedSubscription)
+        
+        // End the signpost interval
+        os_signpost(.end, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
+        
     }
 }
 
