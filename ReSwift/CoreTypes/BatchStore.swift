@@ -85,7 +85,6 @@ open class BatchStore<State>: StoreType {
     public required init(
         reducer: @escaping Reducer<State>,
         state: State,
-        batchingQueue: DispatchQueue,
         middleware: [Middleware<State>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil
@@ -93,7 +92,6 @@ open class BatchStore<State>: StoreType {
         self.subscriptionsAutomaticallySkipRepeats = automaticallySkipsRepeats
         self.reducer = reducer
         self.middleware = middleware
-        self.batchingQueue = batchingQueue
         self.batchingWindow = batchingWindow
         self._batchingWindow = batchingWindow
 
