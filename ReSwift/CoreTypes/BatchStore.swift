@@ -268,7 +268,7 @@ open class BatchStore<State>: StoreType {
         return value
     }()
 
-    func dispatchSync(_ action: Action) {
+    open func dispatchSync(_ action: Action) {
         let block = {
             let subscriberTypeName = String(describing: type(of: action))
                 
@@ -307,7 +307,7 @@ open class BatchStore<State>: StoreType {
     }
   
    
-    func dispatchAsync(_ action: Action, concurrent: Bool = true) {
+    open func dispatchAsync(_ action: Action, concurrent: Bool = true) {
         queue.async(execute: {
             let subscriberTypeName = String(describing: type(of: action))
                 
