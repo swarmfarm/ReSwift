@@ -270,7 +270,7 @@ open class BatchStore<State>: StoreType {
 
     open func dispatchSync(_ action: Action) {
         let block = {
-            self.dispatch(action, concurrent: true)
+            self.dispatch(action, concurrent: false)
         }
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
             queue.sync(execute: {
