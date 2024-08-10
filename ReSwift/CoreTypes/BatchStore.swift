@@ -161,6 +161,7 @@ open class BatchStore<State>: StoreType {
             subscriber: subscriber
         )
     }
+    let log = OSLog(subsystem: "com.reswift", category: "notify")
 
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
         #if swift(>=5.0)
@@ -173,10 +174,9 @@ open class BatchStore<State>: StoreType {
         }
         #endif
     }
-    let log = OSLog(subsystem: "com.reswift", category: "notify")
 
     let group = DispatchGroup()
-    let queue = DispatchQueue(label: "com.reswift.subscriptionQueue", attributes: .concurrent)
+    
 
     private var isRunningInGroup = false
        
@@ -262,6 +262,87 @@ open class BatchStore<State>: StoreType {
   
     public func dispatch(_ action: any Action) {
         dispatch(action, concurrent: true)
+    }
+    
+    let queueKey = DispatchSpecificKey<Int>()
+    var queueContext = unsafeBitCast(BatchStore.self, to: Int.self)
+    lazy var queue: DispatchQueue = {
+        let value = DispatchQueue(label: "com.swarmfarm-reswift.mainStoreQueue", attributes: .concurrent)
+        value.setSpecific(key: self.queueKey, value: queueContext)
+        return value
+    }()
+
+    func dispatchSync(_ action: Action) {
+        let block = {
+            let subscriberTypeName = String(describing: type(of: action))
+                
+            // Start the signpost interval
+            let signpostID = OSSignpostID(log: self.log)
+            os_signpost(.begin, log: self.log, name: "DispatchSync", signpostID: signpostID, "%{public}s", subscriberTypeName)
+            
+            
+           
+            self.dispatch(action, concurrent: true)
+          
+            // End the signpost interval
+            os_signpost(.end, log: self.log, name: "DispatchSync", signpostID: signpostID, "%{public}s", subscriberTypeName)
+        
+        }
+        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
+            queue.sync(execute: {
+                block()
+            })
+        }
+        else {
+            block()
+        }
+        
+        func runSync(_ block: @escaping () -> Void) {
+            if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
+                queue.sync(execute: block)
+            }
+            else {
+                block()
+            }
+        }
+        
+        func subscribe<SelectedState: Equatable, S: StoreSubscriber>(
+            _ subscriber: S,
+            transform: ((ReSwift.Subscription<State>) -> ReSwift.Subscription<SelectedState>)?
+        ) where S.StoreSubscriberStateType == SelectedState
+        {
+            let subscriberTypeName = String(describing: type(of: subscriber))
+                
+            // Start the signpost interval
+            let signpostID = OSSignpostID(log: log)
+            os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
+            
+            runSync {
+                self.subscribe(subscriber, transform: transform)
+            }
+            
+            // End the signpost interval
+            os_signpost(.end, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
+        }
+        
+        func unsubscribe(_ subscriber: AnyStoreSubscriber) {
+            runSync {
+                self.unsubscribe(subscriber)
+            }
+        }
+        func dispatchAsync(_ action: Action, concurrent: Bool = true) {
+            queue.async(execute: {
+                let subscriberTypeName = String(describing: type(of: action))
+                    
+                // Start the signpost interval
+                let signpostID = OSSignpostID(log: self.log)
+                os_signpost(.begin, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                self.dispatch(action, concurrent: concurrent)
+                // End the signpost interval
+                os_signpost(.end, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
+            })
+        }
+//        sendToAnalytics()
     }
     
     
