@@ -175,14 +175,14 @@ open class BatchStore<State>: StoreType {
     
 
     private var isRunningInGroup = false
-       
+    private let concurrentQueue = DispatchQueue(label: "com.swarmfarm-reswift.concurrentQueue", attributes: .concurrent)
     func notifySubscriptions(previousState: State, concurrent: Bool = false) {
         let nextState = self.state!
         let previousState = previousState
         
         var subscriptionsToRemove = Set<SubscriptionType>()
         
-        let shouldRunConcurrently = false && !isRunningInGroup && !concurrent
+        let shouldRunConcurrently = !isRunningInGroup && concurrent
         
         if shouldRunConcurrently {
             isRunningInGroup = true
@@ -201,10 +201,8 @@ open class BatchStore<State>: StoreType {
                 
                 if shouldRunConcurrently {
                     group.enter()
-                    queue.async { [weak self] in
+                    concurrentQueue.async { [weak self] in
                         if subscription.subscriber != nil {
-                            
-                            
                             subscription.newValues(oldState: previousState, newState: nextState)
                         }
                         self?.group.leave()
@@ -269,16 +267,14 @@ open class BatchStore<State>: StoreType {
     }()
 
     open func dispatchSync(_ action: Action) {
-        let block = {
-            self.dispatch(action, concurrent: false)
-        }
+       
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
             queue.sync(execute: {
-                block()
+                self.dispatch(action, concurrent: true)
             })
         }
         else {
-            block()
+            self.dispatch(action, concurrent: false)
         }
         
        
