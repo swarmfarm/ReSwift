@@ -108,7 +108,7 @@ open class BatchStore<State>: StoreType {
                 { dispatchFunction, middleware in
                     // If the store get's deinitialized before the middleware is complete; drop
                     // the action without dispatching.
-                    let dispatch: (Action) -> Void = { [weak self] in self?.dispatch($0) }
+                    let dispatch: (Action) -> Void = { [weak self] in self?.dispatch($0, concurrent: false) }
                     let getState: () -> State? = { [weak self] in self?.state }
                     return middleware(dispatch, getState)(dispatchFunction)
             })
@@ -247,7 +247,7 @@ open class BatchStore<State>: StoreType {
         state = newState
     }
     
-    public func dispatch(_ action: Action, concurrent: Bool = true) {
+    public func dispatch(_ action: Action, concurrent: Bool = false) {
         guard let currentState = state else {
             return
         }
@@ -257,7 +257,7 @@ open class BatchStore<State>: StoreType {
 
   
     public func dispatch(_ action: any Action) {
-        dispatch(action, concurrent: true)
+        dispatch(action, concurrent: false)
     }
     
     let queueKey = DispatchSpecificKey<Int>()
@@ -332,7 +332,7 @@ open class BatchStore<State>: StoreType {
             else
             {
                 // Fallback to synchronous (within the context of the DispatchQueue) if batching is off
-                self.dispatch(action)
+                self.dispatch(action, concurrent: false)
             }
         }
     }
