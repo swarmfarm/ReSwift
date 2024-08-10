@@ -263,26 +263,14 @@ open class BatchStore<State>: StoreType {
     let queueKey = DispatchSpecificKey<Int>()
     var queueContext = unsafeBitCast(BatchStore.self, to: Int.self)
     lazy var queue: DispatchQueue = {
-        let value = DispatchQueue(label: "com.swarmfarm-reswift.mainStoreQueue", attributes: .concurrent)
+        let value = DispatchQueue(label: "com.swarmfarm-reswift.mainStoreQueue")
         value.setSpecific(key: self.queueKey, value: queueContext)
         return value
     }()
 
     open func dispatchSync(_ action: Action) {
         let block = {
-            let subscriberTypeName = String(describing: type(of: action))
-                
-            // Start the signpost interval
-            let signpostID = OSSignpostID(log: self.log)
-            os_signpost(.begin, log: self.log, name: "DispatchSync", signpostID: signpostID, "%{public}s", subscriberTypeName)
-            
-            
-           
             self.dispatch(action, concurrent: true)
-          
-            // End the signpost interval
-            os_signpost(.end, log: self.log, name: "DispatchSync", signpostID: signpostID, "%{public}s", subscriberTypeName)
-        
         }
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
             queue.sync(execute: {
@@ -309,14 +297,7 @@ open class BatchStore<State>: StoreType {
    
     open func dispatchAsync(_ action: Action, concurrent: Bool = true) {
         queue.async(execute: {
-            let subscriberTypeName = String(describing: type(of: action))
-                
-            // Start the signpost interval
-            let signpostID = OSSignpostID(log: self.log)
-            os_signpost(.begin, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
             self.dispatch(action, concurrent: concurrent)
-            // End the signpost interval
-            os_signpost(.end, log: self.log, name: "DispatchAsync", signpostID: signpostID, "%{public}s", subscriberTypeName)
         })
     }
     open func dispatchBatched(_ action: Action) {
