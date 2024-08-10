@@ -182,7 +182,7 @@ open class BatchStore<State>: StoreType {
         
         var subscriptionsToRemove = Set<SubscriptionType>()
         
-        let shouldRunConcurrently = !isRunningInGroup && !concurrent
+        let shouldRunConcurrently = false && !isRunningInGroup && !concurrent
         
         if shouldRunConcurrently {
             isRunningInGroup = true
