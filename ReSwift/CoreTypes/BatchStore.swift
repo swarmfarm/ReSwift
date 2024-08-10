@@ -301,7 +301,7 @@ open class BatchStore<State>: StoreType {
         })
     }
     open func dispatchBatched(_ action: Action) {
-        batchingQueue.async { [weak self] in
+        queue.async { [weak self] in
             guard let self = self else {
                 return
             }
