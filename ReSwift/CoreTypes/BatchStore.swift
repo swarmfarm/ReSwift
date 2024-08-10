@@ -176,7 +176,7 @@ open class BatchStore<State>: StoreType {
 
     private var isRunningInGroup = false
        
-    func notifySubscriptions(previousState: State, concurrent: Bool = true) {
+    func notifySubscriptions(previousState: State, concurrent: Bool = false) {
         let nextState = self.state!
         let previousState = previousState
         
@@ -295,7 +295,7 @@ open class BatchStore<State>: StoreType {
     }
   
    
-    open func dispatchAsync(_ action: Action, concurrent: Bool = true) {
+    open func dispatchAsync(_ action: Action, concurrent: Bool = false) {
         queue.async(execute: {
             self.dispatch(action, concurrent: concurrent)
         })
