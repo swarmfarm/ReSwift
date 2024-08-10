@@ -27,7 +27,9 @@ open class BatchStore<State>: StoreType {
     private(set) public var state: State!
     
     /// Working queue for timing purposes
-    private var batchingQueue: DispatchQueue
+    private lazy var batchingQueue: DispatchQueue = {
+        self.queue
+    }()
     
     /// Time interval for the system to batch by. Set to nil to disable batching altogether
     public var batchingWindow: TimeInterval? = nil {
@@ -301,7 +303,7 @@ open class BatchStore<State>: StoreType {
         })
     }
     open func dispatchBatched(_ action: Action) {
-        queue.async { [weak self] in
+        batchingQueue.async { [weak self] in
             guard let self = self else {
                 return
             }
