@@ -71,6 +71,10 @@ class DeInitStore<State>: Store<State> {
                 middleware: middleware,
                 automaticallySkipsRepeats: automaticallySkipsRepeats)
     }
+    
+    required init(reducer: @escaping Reducer<State>, state: State?, middleware: [Middleware<State>] = [], automaticallySkipsRepeats: Bool = true, batchingWindow: TimeInterval? = nil) {
+        fatalError("init(reducer:state:middleware:automaticallySkipsRepeats:batchingWindow:) has not been implemented")
+    }
 }
 
 struct CounterState {

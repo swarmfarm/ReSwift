@@ -2,7 +2,7 @@
 
 import XCTest
 import ReSwift
-
+typealias Store = BatchStore
 final class PerformanceTests: XCTestCase {
     struct MockState {}
     struct MockAction: Action {}

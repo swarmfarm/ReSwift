@@ -16,9 +16,10 @@ import os
  reducers you can combine them by initializing a `MainReducer` with all of your reducers as an
  argument.
  */
+typealias Store<T> = BatchStore<T>
+
 open class BatchStore<State>: StoreType {
-   
-    
+  
    
     
     
@@ -84,7 +85,7 @@ open class BatchStore<State>: StoreType {
     ///   implements `Equatable`. Defaults to `true`.
     public required init(
         reducer: @escaping Reducer<State>,
-        state: State,
+        state: State?,
         middleware: [Middleware<State>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil
@@ -175,7 +176,6 @@ open class BatchStore<State>: StoreType {
     
 
     private var isRunningInGroup = false
-    private let concurrentQueue = DispatchQueue(label: "com.swarmfarm-reswift.concurrentQueue", attributes: .concurrent)
     func notifySubscriptions(previousState: State, concurrent: Bool = false) {
         let nextState = self.state!
         let previousState = previousState
@@ -260,6 +260,14 @@ open class BatchStore<State>: StoreType {
     
     let queueKey = DispatchSpecificKey<Int>()
     var queueContext = unsafeBitCast(BatchStore.self, to: Int.self)
+    var concurrentQueueContext = unsafeBitCast(BatchStore.self, to: Int.self)
+
+    lazy var concurrentQueue: DispatchQueue = {
+        let value = DispatchQueue(label: "com.swarmfarm-reswift.concurrentQueue", attributes: .concurrent)
+        value.setSpecific(key: self.queueKey, value: concurrentQueueContext)
+        return value
+    }()
+
     lazy var queue: DispatchQueue = {
         let value = DispatchQueue(label: "com.swarmfarm-reswift.mainStoreQueue")
         value.setSpecific(key: self.queueKey, value: queueContext)
@@ -268,7 +276,7 @@ open class BatchStore<State>: StoreType {
 
     open func dispatchSync(_ action: Action) {
        
-        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
+        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
             queue.sync(execute: {
                 self.dispatch(action, concurrent: true)
             })
@@ -276,13 +284,12 @@ open class BatchStore<State>: StoreType {
         else {
             self.dispatch(action, concurrent: false)
         }
-        
        
 //        sendToAnalytics()
     }
     
     func runSync(_ block: @escaping () -> Void) {
-        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext {
+        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
             queue.sync(execute: block)
         }
         else {
@@ -337,7 +344,47 @@ open class BatchStore<State>: StoreType {
         assertionFailure("Not implemented for BatchStore")
     }
 
+
+  
+
+  
+  
     public typealias DispatchCallback = (State) -> Void
+
+    @available(*, deprecated, message: "Deprecated in favor of https://github.com/ReSwift/ReSwift-Thunk")
+    public typealias ActionCreator = (_ state: State, _ store: BatchStore) -> Action?
+
+    @available(*, deprecated, message: "Deprecated in favor of https://github.com/ReSwift/ReSwift-Thunk")
+    public typealias AsyncActionCreator = (
+        _ state: State,
+        _ store: BatchStore,
+        _ actionCreatorCallback: @escaping ((ActionCreator) -> Void)
+    ) -> Void
+    
+    public func dispatch(_ actionCreator: (State, BatchStore<State>) -> (any Action)?) {
+        if let action = actionCreator(state, self) {
+            dispatch(action)
+        }
+    }
+    
+    public func dispatch(_ asyncActionCreator: @escaping (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void) {
+        dispatch(asyncActionCreator, callback: nil)
+
+    }
+    
+    public func dispatch(_ asyncActionCreator: (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void, callback: ((State) -> Void)?) {
+        asyncActionCreator(state, self) { actionProvider in
+            let action = actionProvider(self.state, self)
+
+            if let action = action {
+                self.dispatch(action)
+                callback?(self.state)
+            }
+        }
+    }
+    
+   
+    
 }
 
 // MARK: Skip Repeats for Equatable States
