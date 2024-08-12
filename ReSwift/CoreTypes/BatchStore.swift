@@ -197,20 +197,25 @@ open class BatchStore<State>: StoreType {
             else {
                 let signpostID = OSSignpostID(log: log)
                 let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
-                os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+               
                 
                 if shouldRunConcurrently {
                     group.enter()
                     concurrentQueue.async { [weak self] in
                         if subscription.subscriber != nil {
+                            let log = OSLog(subsystem: "com.reswift", category: "notify.concurrent")
+                            os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                             subscription.newValues(oldState: previousState, newState: nextState)
+                            os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                         }
                         self?.group.leave()
                     }
                 } else {
+                    os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                     subscription.newValues(oldState: previousState, newState: nextState)
+                    os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                 }
-                os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                
             }
             
         }
