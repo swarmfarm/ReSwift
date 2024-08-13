@@ -180,7 +180,7 @@ open class BatchStore<State>: StoreType {
         let nextState = self.state!
         let previousState = previousState
         
-        var subscriptionsToRemove = Set<SubscriptionType>()
+        
         
         let shouldRunConcurrently = !isRunningInGroup && concurrent
         
@@ -192,7 +192,7 @@ open class BatchStore<State>: StoreType {
         
         subscriptions.forEach { subscription in
             if subscription.subscriber == nil {
-                subscriptionsToRemove.insert(subscription)
+                subscriptions.remove(subscription)
             }
             else {
                 let signpostID = OSSignpostID(log: log)
@@ -232,10 +232,6 @@ open class BatchStore<State>: StoreType {
     
             isRunningInGroup = false
             
-        }
-        
-        for subscription in subscriptionsToRemove {
-            subscriptions.remove(subscription)
         }
         
     }
