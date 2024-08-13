@@ -205,15 +205,22 @@ open class BatchStore<State>: StoreType {
                         if subscription.subscriber != nil {
                             let log = OSLog(subsystem: "com.reswift", category: "notify.concurrent")
                             os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                            defer {
+                                os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                            }
                             subscription.newValues(oldState: previousState, newState: nextState)
-                            os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                           
                         }
                         self?.group.leave()
                     }
                 } else {
                     os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                    defer {
+                        os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                    }
                     subscription.newValues(oldState: previousState, newState: nextState)
-                    os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
+                    
+                    
                 }
                 
             }
