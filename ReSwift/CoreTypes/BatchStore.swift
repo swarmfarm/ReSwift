@@ -282,11 +282,11 @@ open class BatchStore<State>: StoreType {
         return value
     }()
 
-    open func dispatchSync(_ action: Action) {
+    open func dispatchSync(_ action: Action, concurrent: Bool = true) {
        
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
             queue.sync(execute: {
-                self.dispatch(action, concurrent: true)
+                self.dispatch(action, concurrent: concurrent)
             })
         }
         else {
