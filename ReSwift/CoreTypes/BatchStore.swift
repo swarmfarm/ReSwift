@@ -271,7 +271,12 @@ open class BatchStore<State>: StoreType {
     var concurrentQueueContext = unsafeBitCast(BatchStore.self, to: Int.self)
 
     lazy var concurrentQueue: DispatchQueue = {
-        let value = DispatchQueue(label: "com.swarmfarm-reswift.concurrentQueue", attributes: .concurrent)
+        let value = DispatchQueue(
+            label: "com.swarmfarm-reswift.concurrentQueue",
+            qos: .userInteractive,
+            attributes: .concurrent
+        )
+        
         value.setSpecific(key: self.queueKey, value: concurrentQueueContext)
         return value
     }()
@@ -292,8 +297,6 @@ open class BatchStore<State>: StoreType {
         else {
             self.dispatch(action, concurrent: false)
         }
-       
-//        sendToAnalytics()
     }
     
     func runSync(_ block: @escaping () -> Void) {
