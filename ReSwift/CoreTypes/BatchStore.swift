@@ -57,7 +57,24 @@ open class BatchStore<State>: StoreType {
 
     private var reducer: Reducer<State>
 
-    var subscriptions: Set<SubscriptionType> = []
+    private var subscriptionsLock = NSLock()
+    private var _subscriptions: Set<SubscriptionType> = []
+    var subscriptions: Set<SubscriptionType>   {
+        get {
+            subscriptionsLock.lock()
+            defer {
+                subscriptionsLock.unlock()
+            }
+            return _subscriptions
+        }
+        set {
+            subscriptionsLock.lock()
+            defer {
+                subscriptionsLock.unlock()
+            }
+            _subscriptions = newValue
+        }
+    }
 
     private var isDispatching = Synchronized<Bool>(false)
 
@@ -189,10 +206,10 @@ open class BatchStore<State>: StoreType {
            
         }
        
-        
+        var subscriptionsToRemove = [SubscriptionBox<State>]()
         subscriptions.forEach { subscription in
             if subscription.subscriber == nil {
-                subscriptions.remove(subscription)
+                subscriptionsToRemove.append(subscription)
             }
             else {
                 let signpostID = OSSignpostID(log: log)
@@ -232,6 +249,9 @@ open class BatchStore<State>: StoreType {
     
             isRunningInGroup = false
             
+        }
+        subscriptionsToRemove.forEach { subscription in
+            subscriptions.remove(subscription)
         }
         
     }
