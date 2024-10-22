@@ -87,7 +87,7 @@ public class Subscription<State> {
         ) -> Subscription<Substate>
     {
         return Subscription<Substate> { sink in
-            self.observer = { oldState, newState in
+            self.observer = {  oldState, newState in
                 sink(oldState.map(selector) ?? nil, selector(newState))
             }
         }
@@ -100,8 +100,8 @@ public class Subscription<State> {
     public init(sink: @escaping (@escaping (State?, State) -> Void) -> Void) {
         // Provide the caller with a closure that will forward all values
         // to observers of this subscription.
-        sink { old, new in
-            self.newValues(oldState: old, newState: new)
+        sink { [weak self]  old, new in
+            self?.newValues(oldState: old, newState: new)
         }
     }
 
