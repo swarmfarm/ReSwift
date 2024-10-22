@@ -52,14 +52,14 @@ class SubscriptionBox<State>: Hashable {
         // If we received a transformed subscription, we subscribe to that subscription
         // and forward all new values to the subscriber.
         if let transformedSubscription = transformedSubscription {
-            transformedSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
+            transformedSubscription.observer = { [weak self] _, newState in
+                self?.subscriber?._newState(state: newState as Any)
             }
         // If we haven't received a transformed subscription, we forward all values
         // from the original subscription.
         } else {
-            originalSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
+            originalSubscription.observer = { [weak self] _, newState in
+                self?.subscriber?._newState(state: newState as Any)
             }
         }
     }
@@ -100,7 +100,8 @@ public class Subscription<State> {
     public init(sink: @escaping (@escaping (State?, State) -> Void) -> Void) {
         // Provide the caller with a closure that will forward all values
         // to observers of this subscription.
-        sink { old, new in
+        sink { [weak self] old, new in
+            guard let self else {return}
             self.newValues(oldState: old, newState: new)
         }
     }

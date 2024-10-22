@@ -260,6 +260,7 @@ open class BatchStore<State>: StoreType {
             subscription.subscriber = nil
             subscriptions.remove(subscription)
         }
+        subscriptionsToRemove = []
         
     }
     // swiftlint:disable:next identifier_name
