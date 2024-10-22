@@ -218,7 +218,13 @@ open class BatchStore<State>: StoreType {
                 
                 if shouldRunConcurrently {
                     group.enter()
-                    concurrentQueue.async { [weak self] in
+                    concurrentQueue.async { [weak self, weak subscription] in
+                        defer {
+                            self?.group.leave()
+                        }
+                        guard let subscription, let self else {
+                            return
+                        }
                         if subscription.subscriber != nil {
                             let log = OSLog(subsystem: "com.reswift", category: "notify.concurrent")
                             os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
@@ -228,7 +234,7 @@ open class BatchStore<State>: StoreType {
                             subscription.newValues(oldState: previousState, newState: nextState)
                            
                         }
-                        self?.group.leave()
+                        
                     }
                 } else {
                     os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
@@ -311,7 +317,8 @@ open class BatchStore<State>: StoreType {
     open func dispatchSync(_ action: Action, concurrent: Bool = true) {
        
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
-            queue.sync(execute: {
+            queue.sync(execute: { [weak self] in
+                guard let self else {return}
                 self.dispatch(action, concurrent: concurrent)
             })
         }
@@ -331,8 +338,8 @@ open class BatchStore<State>: StoreType {
   
    
     open func dispatchAsync(_ action: Action, concurrent: Bool = false) {
-        queue.async(execute: {
-            self.dispatch(action, concurrent: concurrent)
+        queue.async(execute: { [weak self] in
+            self?.dispatch(action, concurrent: concurrent)
         })
     }
     open func dispatchBatched(_ action: Action) {
@@ -405,7 +412,8 @@ open class BatchStore<State>: StoreType {
     }
     
     public func dispatch(_ asyncActionCreator: (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void, callback: ((State) -> Void)?) {
-        asyncActionCreator(state, self) { actionProvider in
+        asyncActionCreator(state, self) { [weak self] actionProvider in
+            guard let self else {return}
             let action = actionProvider(self.state, self)
 
             if let action = action {
@@ -432,7 +440,8 @@ extension BatchStore {
         let signpostID = OSSignpostID(log: log)
         os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
         
-        runSync {
+        runSync { [weak self, weak subscriber] in
+            guard let self, let subscriber else {return}
             let originalSubscription = Subscription<State>()
 
             var transformedSubscription = transform?(originalSubscription)
