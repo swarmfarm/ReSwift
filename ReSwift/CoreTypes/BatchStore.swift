@@ -185,6 +185,7 @@ open class BatchStore<State>: StoreType {
         runSync { [weak subscriber, weak self] in
             guard let self else { return }
             if let index = self.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
+                self.subscriptions[index].subscriber = nil
                 self.subscriptions.remove(at: index)
             }
         }
