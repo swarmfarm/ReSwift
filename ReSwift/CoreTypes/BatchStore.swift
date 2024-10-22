@@ -182,7 +182,8 @@ open class BatchStore<State>: StoreType {
     let log = OSLog(subsystem: "com.reswift", category: "notify")
 
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
-        runSync { [weak subscriber] in
+        runSync { [weak subscriber, weak self] in
+            guard let self else { return }
             if let index = self.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
                 self.subscriptions.remove(at: index)
             }

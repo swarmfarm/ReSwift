@@ -16,7 +16,7 @@
 /// subscription and passes any values that come through this subscriptions to the subscriber.
 class SubscriptionBox<State>: Hashable {
 
-    private weak var originalSubscription: Subscription<State>?
+    private var originalSubscription: Subscription<State>
     weak var subscriber: AnyStoreSubscriber?
     private let objectIdentifier: ObjectIdentifier
 
@@ -68,7 +68,7 @@ class SubscriptionBox<State>: Hashable {
         // We pass all new values through the original subscription, which accepts
         // values of type `<State>`. If present, transformed subscriptions will
         // receive this update and transform it before passing it on to the subscriber.
-        self.originalSubscription?.newValues(oldState: oldState, newState: newState)
+        self.originalSubscription.newValues(oldState: oldState, newState: newState)
     }
 
     static func == (left: SubscriptionBox<State>, right: SubscriptionBox<State>) -> Bool {
