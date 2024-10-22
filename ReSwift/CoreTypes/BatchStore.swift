@@ -182,7 +182,7 @@ open class BatchStore<State>: StoreType {
     let log = OSLog(subsystem: "com.reswift", category: "notify")
 
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
-        runSync { [weak subscriber] in
+        runSync {
             if let index = self.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
                 self.subscriptions.remove(at: index)
             }
@@ -218,11 +218,11 @@ open class BatchStore<State>: StoreType {
                 
                 if shouldRunConcurrently {
                     group.enter()
-                    concurrentQueue.async { [weak self, weak subscription] in
+                    concurrentQueue.async { [weak self] in
                         defer {
                             self?.group.leave()
                         }
-                        guard let subscription, let self else {
+                        guard  let self else {
                             return
                         }
                         if subscription.subscriber != nil {
@@ -440,7 +440,7 @@ extension BatchStore {
         let signpostID = OSSignpostID(log: log)
         os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
         
-        runSync { [weak self, weak subscriber] in
+        runSync { [weak self] in
             guard let self, let subscriber else {return}
             let originalSubscription = Subscription<State>()
 
