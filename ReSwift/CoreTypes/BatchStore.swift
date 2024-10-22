@@ -441,7 +441,7 @@ extension BatchStore {
         os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
         
         runSync { [weak self] in
-            guard let self, let subscriber else {return}
+            guard let self else {return}
             let originalSubscription = Subscription<State>()
 
             var transformedSubscription = transform?(originalSubscription)
