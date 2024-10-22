@@ -16,7 +16,7 @@
 /// subscription and passes any values that come through this subscriptions to the subscriber.
 class SubscriptionBox<State>: Hashable {
 
-    private let originalSubscription: Subscription<State>
+    private weak var originalSubscription: Subscription<State>?
     weak var subscriber: AnyStoreSubscriber?
     private let objectIdentifier: ObjectIdentifier
 
@@ -68,7 +68,7 @@ class SubscriptionBox<State>: Hashable {
         // We pass all new values through the original subscription, which accepts
         // values of type `<State>`. If present, transformed subscriptions will
         // receive this update and transform it before passing it on to the subscriber.
-        self.originalSubscription.newValues(oldState: oldState, newState: newState)
+        self.originalSubscription?.newValues(oldState: oldState, newState: newState)
     }
 
     static func == (left: SubscriptionBox<State>, right: SubscriptionBox<State>) -> Bool {
@@ -86,8 +86,8 @@ public class Subscription<State> {
         _ selector: @escaping (State) -> Substate
         ) -> Subscription<Substate>
     {
-        return Subscription<Substate> { sink in
-            self.observer = { oldState, newState in
+        return Subscription<Substate> { [weak self] sink in
+            self?.observer = {  oldState, newState in
                 sink(oldState.map(selector) ?? nil, selector(newState))
             }
         }
@@ -131,8 +131,8 @@ public class Subscription<State> {
     /// - parameter newState: The store's new state, after the action has been reduced.
     public func skipRepeats(_ isRepeat: @escaping (_ oldState: State, _ newState: State) -> Bool)
         -> Subscription<State> {
-        return Subscription<State> { sink in
-            self.observer = { oldState, newState in
+        return Subscription<State> { [weak self] sink in
+            self?.observer = { oldState, newState in
                 switch (oldState, newState) {
                 case let (old?, new):
                     if !isRepeat(old, new) {
@@ -162,7 +162,7 @@ public class Subscription<State> {
 }
 
 extension Subscription where State: Equatable {
-    public func skipRepeats() -> Subscription<State>{
+    public func skipRepeats() -> Subscription<State> {
         return self.skipRepeats(==)
     }
 }
