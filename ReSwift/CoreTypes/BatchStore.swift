@@ -154,7 +154,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
     }
     
     /// The default dispatch function that calls the reducer and updates the state.
-    final func _defaultDispatch(action: any Action) {
+    public func _defaultDispatch(action: any Action) {
         guard !isDispatching.value else {
             raiseFatalError("""
             ReSwift:ConcurrentMutationError
@@ -192,7 +192,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      already on that queue (or on the concurrency queue), it will not do
      another sync.
      */
-    final func dispatchSync(_ action: consuming any Action, concurrent: Bool = true) {
+    public func dispatchSync(_ action: consuming any Action, concurrent: Bool = true) {
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext
             && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
             queue.sync { [weak self] in
@@ -206,7 +206,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
     /**
      Dispatch asynchronously on the store’s internal serial queue.
      */
-    final func dispatchAsync(_ action:  any Action, concurrent: Bool = false) {
+    public func dispatchAsync(_ action:  any Action, concurrent: Bool = false) {
         queue.async { [weak self] in
             self?.dispatch(action, concurrent: concurrent)
         }
@@ -216,7 +216,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      Dispatch an action in a batched manner if a batching window is set.
      Otherwise dispatch immediately (synchronously on the queue).
      */
-    final func dispatchBatched(_ action:  any Action) {
+    public func dispatchBatched(_ action:  any Action) {
         batchingQueue.async { [weak self] in
             guard let self = self else { return }
             if let batchingWindow = self._batchingWindow {
@@ -274,12 +274,12 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
         originalSubscription.newValues(oldState: nil, newState: state)
     }
     
-    final func subscribe<S: StoreSubscriber>(_ subscriber: S)
+    public func subscribe<S: StoreSubscriber>(_ subscriber: S)
         where S.StoreSubscriberStateType == State {
             subscribe(subscriber, transform: nil)
     }
     
-    final func subscribe<SelectedState, S: StoreSubscriber>(
+    public func subscribe<SelectedState, S: StoreSubscriber>(
         _ subscriber: S,
         transform: ((Subscription<State>) -> Subscription<SelectedState>)?
     ) where S.StoreSubscriberStateType == SelectedState {
@@ -303,7 +303,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
         )
     }
     
-    final func unsubscribe(_ subscriber: AnyStoreSubscriber) {
+    public func unsubscribe(_ subscriber: AnyStoreSubscriber) {
         runSync { [weak self] in
             guard let self = self else { return }
             if let index = self.subscriptions.firstIndex(where: { $0.subscriber === subscriber }) {
