@@ -317,8 +317,8 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      If concurrent == true, we call them from a concurrent queue and wait.
      Otherwise, we call them inline.
      */
-    func notifySubscriptions(previousState: State?, concurrent: Bool = false) {
-        let nextState = self.state
+    func notifySubscriptions(previousState: State, concurrent: Bool = false) {
+        
         let shouldRunConcurrently = !isRunningInGroup && concurrent
         
         if shouldRunConcurrently {
@@ -334,11 +334,15 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
                 if shouldRunConcurrently {
                     group.enter()
                     concurrentQueue.async { [weak self] in
+                        
                         defer { self?.group.leave() }
-                        subscription.newValues(oldState: previousState, newState: nextState)
+                        guard let self else {
+                            return
+                        }
+                        subscription.newValues(oldState: previousState, newState: self.state)
                     }
                 } else {
-                    subscription.newValues(oldState: previousState, newState: nextState)
+                    subscription.newValues(oldState: previousState, newState: self.state)
                 }
             }
         }
