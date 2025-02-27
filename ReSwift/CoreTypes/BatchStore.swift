@@ -164,10 +164,8 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
         }
         
         isDispatching.value { $0 = true }
-        let newState = reducer(action, &state)
+        reducer(action, &state)
         isDispatching.value { $0 = false }
-        
-        state = newState
     }
     
     // MARK: - Public Dispatch Methods
