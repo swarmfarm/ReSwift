@@ -19,7 +19,7 @@ public typealias Store<T> = BatchStore<T>
 public final class BatchStore<State>: @unchecked Sendable where State: Sendable {
 
     // The state managed by this store
-    private(set) public var state: State!
+    private(set) public var state: State
     
     // Dispatch function (possibly wrapped by middleware)
     public lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
@@ -121,7 +121,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      */
     public required init(
         reducer: @escaping Reducer<State>,
-        state: State?,
+        state: State,
         middleware: [Middleware<State>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil
@@ -182,9 +182,9 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      so be mindful of potential for re-entrancy.
      */
     public func dispatch(_ action: any Action, concurrent: Bool) {
-        guard let currentState = state else { return }
+        
         dispatchFunction(action)
-        notifySubscriptions(previousState: currentState, concurrent: concurrent)
+        notifySubscriptions(previousState: state, concurrent: concurrent)
     }
     
     /**
@@ -226,14 +226,14 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
                     self._isBatching = true
                     self.batchingQueue.asyncAfter(deadline: .now() + batchingWindow) { [weak self] in
                         guard let self = self else { return }
-                        guard let currentState = self.state else { return }
+//                        guard let currentState = self.state else { return }
                         
                         for action in self._batchedActions {
                             self.dispatchFunction(action)
                         }
                         self._batchedActions.removeAll()
                         
-                        self.notifySubscriptions(previousState: currentState)
+                        self.notifySubscriptions(previousState: self.state)
                         self._isBatching = false
                     }
                 }
@@ -320,7 +320,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      Otherwise, we call them inline.
      */
     func notifySubscriptions(previousState: State?, concurrent: Bool = false) {
-        let nextState = self.state!
+        let nextState = self.state
         let shouldRunConcurrently = !isRunningInGroup && concurrent
         
         if shouldRunConcurrently {
