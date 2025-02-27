@@ -8,7 +8,7 @@ public class Subscription<State> {
     
     /// The closure that is called with changes from the store.
     /// Subclasses or helper methods can write to this `observer`.
-    public var observer: ((State?, State) -> Void)?
+    public var observer: ((borrowing State?,  borrowing State) -> Void)?
     
     public init() {}
     
@@ -16,7 +16,7 @@ public class Subscription<State> {
      Creates a new subscription by providing a sink closure. You get a callback to pass
      old and new states. This effectively sets `observer` for you.
      */
-    public init(sink: @escaping (@escaping (State?, State) -> Void) -> Void) {
+    public init(sink: @escaping (@escaping (borrowing State?, borrowing State) -> Void) -> Void) {
         sink { old, new in
             self.newValues(oldState: old, newState: new)
         }
@@ -27,7 +27,7 @@ public class Subscription<State> {
      an observer that, when invoked, calls its own subscribers with that substate.
      */
     public func select<Substate>(
-        _ selector: @escaping (State) -> Substate
+        _ selector: @escaping (borrowing State) -> Substate
     ) -> Subscription<Substate> {
         return Subscription<Substate> { sink in
             self.observer = { old, new in
@@ -48,7 +48,7 @@ public class Subscription<State> {
      are considered “the same” and should be skipped.
      */
     public func skipRepeats(
-        _ isRepeat: @escaping (_ oldState: State, _ newState: State) -> Bool
+        _ isRepeat: @escaping (_ oldState: State?, _ newState: State) -> Bool
     ) -> Subscription<State> {
         return Subscription<State> { sink in
             self.observer = { old, new in
@@ -59,6 +59,7 @@ public class Subscription<State> {
                 } else {
                     sink(old, new)
                 }
+           
             }
         }
     }
@@ -74,7 +75,7 @@ public class Subscription<State> {
     /**
      Convenience method. This is effectively the same as `skipRepeats(isRepeat:)`.
      */
-    public func skip(when: @escaping (_ old: State, _ new: State) -> Bool) -> Subscription<State> {
+    public func skip(when: @escaping (_ old: borrowing State?, _ new: borrowing State) -> Bool) -> Subscription<State> {
         return skipRepeats(when)
     }
     
@@ -82,7 +83,7 @@ public class Subscription<State> {
      The inverse of `skip(when:)`; only forward updates where `when(old,new)` is true.
      */
     public func only(
-        when: @escaping (_ old: State, _ new: State) -> Bool
+        when: @escaping (_ old: borrowing State?, _ new: borrowing State) -> Bool
     ) -> Subscription<State> {
         return skipRepeats { old, new in
             return !when(old, new)
@@ -92,7 +93,7 @@ public class Subscription<State> {
     /**
      Internal method to notify this subscription of a state update.
      */
-    func newValues(oldState: State?, newState: State) {
+    func newValues(oldState: State?, newState: borrowing State) {
         observer?(oldState, newState)
     }
 }

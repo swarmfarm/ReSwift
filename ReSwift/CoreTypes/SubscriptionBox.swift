@@ -37,7 +37,7 @@ class SubscriptionBox<State>: Hashable {
         }
     }
     
-    func newValues(oldState: State, newState: State) {
+    func newValues(oldState: borrowing State?, newState: borrowing State) {
         // The original subscription notifies the chain
         self.originalSubscription.newValues(oldState: oldState, newState: newState)
     }

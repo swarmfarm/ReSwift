@@ -164,7 +164,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
         }
         
         isDispatching.value { $0 = true }
-        let newState = reducer(action, state)
+        let newState = reducer(action, &state)
         isDispatching.value { $0 = false }
         
         state = newState
@@ -192,7 +192,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      already on that queue (or on the concurrency queue), it will not do
      another sync.
      */
-    final func dispatchSync(_ action: any Action, concurrent: Bool = true) {
+    final func dispatchSync(_ action: consuming any Action, concurrent: Bool = true) {
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext
             && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
             queue.sync { [weak self] in
@@ -206,7 +206,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
     /**
      Dispatch asynchronously on the store’s internal serial queue.
      */
-    final func dispatchAsync(_ action: any Action, concurrent: Bool = false) {
+    final func dispatchAsync(_ action:  any Action, concurrent: Bool = false) {
         queue.async { [weak self] in
             self?.dispatch(action, concurrent: concurrent)
         }
@@ -216,7 +216,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      Dispatch an action in a batched manner if a batching window is set.
      Otherwise dispatch immediately (synchronously on the queue).
      */
-    final func dispatchBatched(_ action: any Action) {
+    final func dispatchBatched(_ action:  any Action) {
         batchingQueue.async { [weak self] in
             guard let self = self else { return }
             if let batchingWindow = self._batchingWindow {
@@ -319,7 +319,7 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      If concurrent == true, we call them from a concurrent queue and wait.
      Otherwise, we call them inline.
      */
-    func notifySubscriptions(previousState: State, concurrent: Bool = false) {
+    func notifySubscriptions(previousState: State?, concurrent: Bool = false) {
         let nextState = self.state!
         let shouldRunConcurrently = !isRunningInGroup && concurrent
         
