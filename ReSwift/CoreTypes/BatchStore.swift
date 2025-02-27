@@ -180,9 +180,9 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
      so be mindful of potential for re-entrancy.
      */
     public func dispatch(_ action: any Action, concurrent: Bool) {
-        
+        let previous = self.state
         dispatchFunction(action)
-        notifySubscriptions(previousState: state, concurrent: concurrent)
+        notifySubscriptions(previousState: previous, concurrent: concurrent)
     }
     
     /**
