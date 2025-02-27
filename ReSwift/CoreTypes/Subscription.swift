@@ -1,195 +1,98 @@
 //
-//  SubscriberWrapper.swift
+//  Subscription.swift
 //  ReSwift
 //
-//  Created by Virgilio Favero Neto on 4/02/2016.
-//  Copyright © 2016 ReSwift Community. All rights reserved.
-//
 
-/// A box around subscriptions and subscribers.
-///
-/// Acts as a type-erasing wrapper around a subscription and its transformed subscription.
-/// The transformed subscription has a type argument that matches the selected substate of the
-/// subscriber; however that type cannot be exposed to the store.
-///
-/// The box subscribes either to the original subscription, or if available to the transformed
-/// subscription and passes any values that come through this subscriptions to the subscriber.
-import Foundation
-class SubscriptionBox<State>: Hashable {
-
-    private let originalSubscription: Subscription<State>
-    weak var subscriber: AnyStoreSubscriber?
-    let id: UUID
-    #if swift(>=5.0)
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
-    #elseif swift(>=4.2)
-        #if compiler(>=5.0)
-            func hash(into hasher: inout Hasher) {
-                hasher.combine(self.objectIdentifier)
-            }
-        #else
-            var hashValue: Int {
-                return self.objectIdentifier.hashValue
-            }
-        #endif
-    #else
-        var hashValue: Int {
-            return self.objectIdentifier.hashValue
-        }
-    #endif
-
-    init<T>(
-        originalSubscription: Subscription<State>,
-        transformedSubscription: Subscription<T>?,
-        subscriber: AnyStoreSubscriber
-    ) {
-        self.originalSubscription = originalSubscription
-        self.subscriber = subscriber
-        self.id = UUID()
-
-        // If we received a transformed subscription, we subscribe to that subscription
-        // and forward all new values to the subscriber.
-        if let transformedSubscription = transformedSubscription {
-            transformedSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
-            }
-        // If we haven't received a transformed subscription, we forward all values
-        // from the original subscription.
-        } else {
-            originalSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
-            }
-        }
-    }
-
-    func newValues(oldState: State, newState: State) {
-        // We pass all new values through the original subscription, which accepts
-        // values of type `<State>`. If present, transformed subscriptions will
-        // receive this update and transform it before passing it on to the subscriber.
-        self.originalSubscription.newValues(oldState: oldState, newState: newState)
-    }
-
-    static func == (left: SubscriptionBox<State>, right: SubscriptionBox<State>) -> Bool {
-        return left.id == right.id
-    }
-}
-
-/// Represents a subscription of a subscriber to the store. The subscription determines which new
-/// values from the store are forwarded to the subscriber, and how they are transformed.
-/// The subscription acts as a very-light weight signal/observable that you might know from
-/// reactive programming libraries.
+/// Represents a subscription from a subscriber to the store, with optional transformations.
 public class Subscription<State> {
-
-    private func _select<Substate>(
-        _ selector: @escaping (State) -> Substate
-        ) -> Subscription<Substate>
-    {
-        return Subscription<Substate> { sink in
-            self.observer = { oldState, newState in
-                sink(oldState.map(selector) ?? nil, selector(newState))
-            }
-        }
-    }
-
-    // MARK: Public Interface
-
-    /// Initializes a subscription with a sink closure. The closure provides a way to send
-    /// new values over this subscription.
+    
+    /// The closure that is called with changes from the store.
+    /// Subclasses or helper methods can write to this `observer`.
+    public var observer: ((State?, State) -> Void)?
+    
+    public init() {}
+    
+    /**
+     Creates a new subscription by providing a sink closure. You get a callback to pass
+     old and new states. This effectively sets `observer` for you.
+     */
     public init(sink: @escaping (@escaping (State?, State) -> Void) -> Void) {
-        // Provide the caller with a closure that will forward all values
-        // to observers of this subscription.
-        sink {  old, new in
+        sink { old, new in
             self.newValues(oldState: old, newState: new)
         }
     }
-
-    /// Provides a subscription that selects a substate of the state of the original subscription.
-    /// - parameter selector: A closure that maps a state to a selected substate
+    
+    /**
+     Select a substate by applying the `selector`. The returned subscription holds
+     an observer that, when invoked, calls its own subscribers with that substate.
+     */
     public func select<Substate>(
         _ selector: @escaping (State) -> Substate
-        ) -> Subscription<Substate>
-    {
-        return self._select(selector)
+    ) -> Subscription<Substate> {
+        return Subscription<Substate> { sink in
+            self.observer = { old, new in
+                sink(old.map(selector), selector(new))
+            }
+        }
     }
-
-    /// Provides a subscription that selects a substate of the state of the original subscription.
-    /// - parameter keyPath: A key path from a state to a substate
-    public func select<Substate>(
-        _ keyPath: KeyPath<State, Substate>
-        ) -> Subscription<Substate>
-    {
-        return self._select { $0[keyPath: keyPath] }
+    
+    /**
+     Select a substate via a key path.
+     */
+    public func select<Substate>(_ keyPath: KeyPath<State, Substate>) -> Subscription<Substate> {
+        return select { $0[keyPath: keyPath] }
     }
-
-    /// Provides a subscription that skips certain state updates of the original subscription.
-    /// - parameter isRepeat: A closure that determines whether a given state update is a repeat and
-    /// thus should be skipped and not forwarded to subscribers.
-    /// - parameter oldState: The store's old state, before the action is reduced.
-    /// - parameter newState: The store's new state, after the action has been reduced.
-    public func skipRepeats(_ isRepeat: @escaping (_ oldState: State, _ newState: State) -> Bool)
-        -> Subscription<State> {
+    
+    /**
+     Skip repeated states. Provide a closure that returns `true` if the old and new states
+     are considered “the same” and should be skipped.
+     */
+    public func skipRepeats(
+        _ isRepeat: @escaping (_ oldState: State, _ newState: State) -> Bool
+    ) -> Subscription<State> {
         return Subscription<State> { sink in
-            self.observer = { oldState, newState in
-                switch (oldState, newState) {
-                case let (old?, new):
+            self.observer = { old, new in
+                if let old = old {
                     if !isRepeat(old, new) {
-                        sink(oldState, newState)
-                    } else {
-                        return
+                        sink(old, new)
                     }
-                default:
-                    sink(oldState, newState)
+                } else {
+                    sink(old, new)
                 }
             }
         }
     }
-
-    /// The closure called with changes from the store.
-    /// This closure can be written to for use in extensions to Subscription similar to `skipRepeats`
-    public var observer: ((State?, State) -> Void)?
-
-    // MARK: Internals
-
-    init() {}
-
-    /// Sends new values over this subscription. Observers will be notified of these new values.
-    func newValues(oldState: State?, newState: State) {
-        self.observer?(oldState, newState)
+    
+    /**
+     If the subscription’s state type is Equatable, this convenience lets you skip
+     repeated states automatically.
+     */
+    public func skipRepeats() -> Subscription<State> where State: Equatable {
+        return skipRepeats(==)
     }
-}
-
-extension Subscription where State: Equatable {
-    public func skipRepeats() -> Subscription<State>{
-        return self.skipRepeats(==)
+    
+    /**
+     Convenience method. This is effectively the same as `skipRepeats(isRepeat:)`.
+     */
+    public func skip(when: @escaping (_ old: State, _ new: State) -> Bool) -> Subscription<State> {
+        return skipRepeats(when)
     }
-}
-
-/// Subscription skipping convenience methods
-extension Subscription {
-
-    /// Provides a subscription that skips certain state updates of the original subscription.
-    ///
-    /// This is identical to `skipRepeats` and is provided simply for convenience.
-    /// - parameter when: A closure that determines whether a given state update is a repeat and
-    /// thus should be skipped and not forwarded to subscribers.
-    /// - parameter oldState: The store's old state, before the action is reduced.
-    /// - parameter newState: The store's new state, after the action has been reduced.
-    public func skip(when: @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
-        return self.skipRepeats(when)
-    }
-
-    /// Provides a subscription that only updates for certain state changes.
-    ///
-    /// This is effectively the inverse of `skip(when:)` / `skipRepeats(:)`
-    /// - parameter when: A closure that determines whether a given state update should notify
-    /// - parameter oldState: The store's old state, before the action is reduced.
-    /// - parameter newState: The store's new state, after the action has been reduced.
-    /// the subscriber.
-    public func only(when: @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
-        return self.skipRepeats { oldState, newState in
-            return !when(oldState, newState)
+    
+    /**
+     The inverse of `skip(when:)`; only forward updates where `when(old,new)` is true.
+     */
+    public func only(
+        when: @escaping (_ old: State, _ new: State) -> Bool
+    ) -> Subscription<State> {
+        return skipRepeats { old, new in
+            return !when(old, new)
         }
+    }
+    
+    /**
+     Internal method to notify this subscription of a state update.
+     */
+    func newValues(oldState: State?, newState: State) {
+        observer?(oldState, newState)
     }
 }

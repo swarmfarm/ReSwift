@@ -1,9 +1,9 @@
-// swift-tools-version:4.2
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
     name: "ReSwift",
-    // platforms: [.iOS("8.0"), .macOS("10.10"), tvOS("9.0"), .watchOS("2.0")],
+    platforms: [.iOS(.v17), .macOS(.v10_15), .tvOS(.v17), .watchOS(.v10)],
     products: [
         .library(name: "ReSwift", targets: ["ReSwift"])
     ],

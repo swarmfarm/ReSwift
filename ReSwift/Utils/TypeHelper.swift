@@ -2,33 +2,27 @@
 //  TypeHelper.swift
 //  ReSwift
 //
-//  Created by Benjamin Encz on 11/27/15.
-//  Copyright © 2015 ReSwift Community. All rights reserved.
-//
 
 /**
- Method is only used internally in ReSwift to cast the generic `StateType` to a specific
- type expected by reducers / store subscribers.
-
- - parameter action: An action that will be passed to `handleAction`.
- - parameter state: A generic state type that will be casted to `SpecificStateType`.
- - parameter function: The `handleAction` method.
- - returns: A `StateType` from `handleAction` or the original `StateType` if it cannot be
-            casted to `SpecificStateType`.
+ Used internally to cast the generic `Any?` state to a known type
+ before calling a specialized function.
+ 
+ - parameter action: The action to pass to `function`
+ - parameter state: The generic state to cast.
+ - parameter function: The reducer or function that uses a specialized state.
+ - returns: The possibly-new state, or the original if cast fails.
  */
 @discardableResult
-func withSpecificTypes<SpecificStateType, Action>(
-        _ action: Action,
-        state genericStateType: Any?,
-        function: (_ action: Action, _ state: SpecificStateType?) -> SpecificStateType
-    ) -> Any {
-        guard let genericStateType = genericStateType else {
-            return function(action, nil) as Any
-        }
-
-        guard let specificStateType = genericStateType as? SpecificStateType else {
-            return genericStateType
-        }
-
-        return function(action, specificStateType) as Any
+func withSpecificTypes<SpecificStateType, ActionType>(
+    _ action: ActionType,
+    state genericStateType: Any?,
+    function: (_ action: ActionType, _ state: SpecificStateType?) -> SpecificStateType
+) -> Any {
+    guard let unwrappedState = genericStateType else {
+        return function(action, nil) as Any
+    }
+    guard let typedState = unwrappedState as? SpecificStateType else {
+        return unwrappedState
+    }
+    return function(action, typedState) as Any
 }
