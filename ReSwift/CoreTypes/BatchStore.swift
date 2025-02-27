@@ -224,14 +224,14 @@ public final class BatchStore<State>: @unchecked Sendable where State: Sendable 
                     self._isBatching = true
                     self.batchingQueue.asyncAfter(deadline: .now() + batchingWindow) { [weak self] in
                         guard let self = self else { return }
-//                        guard let currentState = self.state else { return }
+                        let currentState = self.state
                         
                         for action in self._batchedActions {
                             self.dispatchFunction(action)
                         }
                         self._batchedActions.removeAll()
                         
-                        self.notifySubscriptions(previousState: self.state)
+                        self.notifySubscriptions(previousState: currentState)
                         self._isBatching = false
                     }
                 }
