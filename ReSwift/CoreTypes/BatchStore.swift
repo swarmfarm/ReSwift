@@ -179,8 +179,9 @@ open class BatchStore<State>: StoreType {
             subscriber: subscriber
         )
     }
+    #if DEBUG
     let log = OSLog(subsystem: "com.reswift", category: "notify")
-
+    #endif
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
         runSync { [weak self] in
             if let index = self?.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
@@ -214,10 +215,11 @@ open class BatchStore<State>: StoreType {
                 subscriptionsToRemove.append(subscription)
             }
             else {
+                #if DEBUG
                 let signpostID = OSSignpostID(log: log)
                 let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
                
-                
+                #endif
                 if shouldRunConcurrently {
                     group.enter()
                     concurrentQueue.async { [weak self] in
@@ -228,21 +230,25 @@ open class BatchStore<State>: StoreType {
                             return
                         }
                         if subscription.subscriber != nil {
+                            #if DEBUG
                             let log = OSLog(subsystem: "com.reswift", category: "notify.concurrent")
                             os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                             defer {
                                 os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                             }
+                            #endif
                             subscription.newValues(oldState: previousState, newState: nextState)
                            
                         }
                         
                     }
                 } else {
+                    #if DEBUG
                     os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                     defer {
                         os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                     }
+                    #endif
                     subscription.newValues(oldState: previousState, newState: nextState)
                     
                     
@@ -434,12 +440,14 @@ extension BatchStore {
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
         ) where S.StoreSubscriberStateType == SelectedState
     {
+        #if DEBUG
         let subscriberTypeName = String(describing: type(of: subscriber))
             
         // Start the signpost interval
         let signpostID = OSSignpostID(log: log)
-        os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
         
+        os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
+        #endif
         runSync { [weak self] in
             guard let self else {return}
             let originalSubscription = Subscription<State>()
@@ -453,8 +461,9 @@ extension BatchStore {
         }
         
         // End the signpost interval
+#if DEBUG
         os_signpost(.end, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
-        
+#endif
     }
 }
 
