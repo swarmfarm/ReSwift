@@ -143,7 +143,7 @@ public protocol StoreType: DispatchingStoreType {
      store.dispatch( noteActionCreator.deleteNote(3) )
      ```
      */
-    func dispatch(_ action: Action, concurrent: Bool)
+    func dispatch(_ action: consuming any Action) 
 
 
     /**

@@ -122,11 +122,11 @@ open class BatchStore<State>: StoreType {
             .reversed()
             .reduce(
                 { [unowned self] action in
-                    self._defaultDispatch(action: action) },
+                    self._defaultDispatch(action: &action) },
                 { dispatchFunction, middleware in
                     // If the store get's deinitialized before the middleware is complete; drop
                     // the action without dispatching.
-                    let dispatch: (Action) -> Void = { [weak self] in self?.dispatch($0, concurrent: false) }
+                    let dispatch: (inout Action) -> Void = { [weak self] in self?.dispatch(&$0, concurrent: false) }
                     let getState: () -> State? = { [weak self] in self?.state }
                     return middleware(dispatch, getState)(dispatchFunction)
             })
@@ -265,7 +265,7 @@ open class BatchStore<State>: StoreType {
         
     }
     // swiftlint:disable:next identifier_name
-    open func _defaultDispatch(action: Action) {
+    open func _defaultDispatch(action: inout Action) {
         guard !isDispatching.value else {
             raiseFatalError(
                 "ReSwift:ConcurrentMutationError- Action has been dispatched while" +
@@ -276,23 +276,22 @@ open class BatchStore<State>: StoreType {
         }
 
         isDispatching.value { $0 = true }
-        let newState = reducer(action, state)
+        reducer(&action, &state)
         isDispatching.value { $0 = false }
 
-        state = newState
     }
     
-    public func dispatch(_ action: Action, concurrent: Bool = false) {
+    public func dispatch(_ action: inout Action, concurrent: Bool = false) {
         guard let currentState = state else {
             return
         }
-        dispatchFunction(action)
+        dispatchFunction(&action)
         notifySubscriptions(previousState: currentState, concurrent: concurrent)
     }
 
   
-    public func dispatch(_ action: any Action) {
-        dispatch(action, concurrent: false)
+    public func dispatch(_ action: consuming any Action) {
+        dispatch(&action, concurrent: false)
     }
     
     let queueKey = DispatchSpecificKey<Int>()
@@ -316,16 +315,16 @@ open class BatchStore<State>: StoreType {
         return value
     }()
 
-    open func dispatchSync(_ action: Action, concurrent: Bool = true) {
+    open func dispatchSync(_ action:  inout Action, concurrent: Bool = true) {
        
         if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
             queue.sync(execute: { [weak self] in
                 guard let self else {return}
-                self.dispatch(action, concurrent: concurrent)
+                self.dispatch(&action, concurrent: concurrent)
             })
         }
         else {
-            self.dispatch(action, concurrent: false)
+            self.dispatch(&action, concurrent: false)
         }
     }
     
@@ -339,9 +338,9 @@ open class BatchStore<State>: StoreType {
     }
   
    
-    open func dispatchAsync(_ action: Action, concurrent: Bool = false) {
+    open func dispatchAsync(_ action: consuming Action, concurrent: Bool = false) {
         queue.async(execute: { [weak self] in
-            self?.dispatch(action, concurrent: concurrent)
+            self?.dispatch(&action, concurrent: concurrent)
         })
     }
     open func dispatchBatched(_ action: Action) {
@@ -362,8 +361,8 @@ open class BatchStore<State>: StoreType {
                             guard let currentState = self.state else {
                                 return
                             }
-                            for action in self._batchedActions {
-                                self.dispatchFunction(action)
+                            for var action in self._batchedActions {
+                                self.dispatchFunction(&action)
                             }
                             self._batchedActions = []
                             
@@ -376,7 +375,8 @@ open class BatchStore<State>: StoreType {
             else
             {
                 // Fallback to synchronous (within the context of the DispatchQueue) if batching is off
-                self.dispatch(action, concurrent: false)
+                var action = action
+                self.dispatch(&action, concurrent: false)
             }
         }
     }

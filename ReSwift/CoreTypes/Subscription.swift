@@ -64,7 +64,7 @@ class SubscriptionBox<State>: Hashable {
         }
     }
 
-    func newValues(oldState: State, newState: State) {
+    func newValues(oldState: consuming State, newState:  borrowing State) {
         // We pass all new values through the original subscription, which accepts
         // values of type `<State>`. If present, transformed subscriptions will
         // receive this update and transform it before passing it on to the subscriber.
@@ -148,14 +148,14 @@ public class Subscription<State> {
 
     /// The closure called with changes from the store.
     /// This closure can be written to for use in extensions to Subscription similar to `skipRepeats`
-    public var observer: ((State?, State) -> Void)?
+    public var observer: ((borrowing State?, borrowing State) -> Void)?
 
     // MARK: Internals
 
     init() {}
 
     /// Sends new values over this subscription. Observers will be notified of these new values.
-    func newValues(oldState: State?, newState: State) {
+    func newValues(oldState: borrowing State?, newState: borrowing State) {
         self.observer?(oldState, newState)
     }
 }
@@ -176,7 +176,7 @@ extension Subscription {
     /// thus should be skipped and not forwarded to subscribers.
     /// - parameter oldState: The store's old state, before the action is reduced.
     /// - parameter newState: The store's new state, after the action has been reduced.
-    public func skip(when: @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
+    public func skip(when: @escaping (_ oldState: borrowing State, _ newState: borrowing State) -> Bool) -> Subscription<State> {
         return self.skipRepeats(when)
     }
 
@@ -187,7 +187,7 @@ extension Subscription {
     /// - parameter oldState: The store's old state, before the action is reduced.
     /// - parameter newState: The store's new state, after the action has been reduced.
     /// the subscriber.
-    public func only(when: @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
+    public func only(when: @escaping (_ oldState: borrowing State, _ newState: borrowing State) -> Bool) -> Subscription<State> {
         return self.skipRepeats { oldState, newState in
             return !when(oldState, newState)
         }
