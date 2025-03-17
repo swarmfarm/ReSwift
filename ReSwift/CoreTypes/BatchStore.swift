@@ -276,10 +276,8 @@ open class BatchStore<State>: StoreType {
         }
 
         isDispatching.value { $0 = true }
-        let newState = reducer(action, state)
+        reducer(action, &state)
         isDispatching.value { $0 = false }
-
-        state = newState
     }
     
     public func dispatch(_ action: Action, concurrent: Bool = false) {
