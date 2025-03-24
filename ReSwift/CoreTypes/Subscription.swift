@@ -82,8 +82,8 @@ class SubscriptionBox<State>: Hashable {
 /// reactive programming libraries.
 public class Subscription<State> {
 
-    private func _select<Substate>(
-        _ selector: @escaping (State) -> Substate
+    private  func _select<Substate>(
+        _ selector: @escaping (borrowing  State) -> Substate
         ) -> Subscription<Substate>
     {
         return Subscription<Substate> { sink in
@@ -107,8 +107,8 @@ public class Subscription<State> {
 
     /// Provides a subscription that selects a substate of the state of the original subscription.
     /// - parameter selector: A closure that maps a state to a selected substate
-    public func select<Substate>(
-        _ selector: @escaping (State) -> Substate
+    public borrowing func select<Substate>(
+        _ selector: @escaping (borrowing State) -> Substate
         ) -> Subscription<Substate>
     {
         return self._select(selector)
@@ -116,7 +116,7 @@ public class Subscription<State> {
 
     /// Provides a subscription that selects a substate of the state of the original subscription.
     /// - parameter keyPath: A key path from a state to a substate
-    public func select<Substate>(
+    public borrowing func select<Substate>(
         _ keyPath: KeyPath<State, Substate>
         ) -> Subscription<Substate>
     {
