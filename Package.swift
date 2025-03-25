@@ -1,21 +1,17 @@
-// swift-tools-version:4.2
+// swift-tools-version:5.10
 import PackageDescription
 
-let package = Package(
-    name: "ReSwift",
-    // platforms: [.iOS("8.0"), .macOS("10.10"), tvOS("9.0"), .watchOS("2.0")],
-    products: [
-        .library(name: "ReSwift", targets: ["ReSwift"])
-    ],
-    targets: [
-        .target(
-            name: "ReSwift",
-            path: "ReSwift"
-        ),
-        .testTarget(
-            name: "ReSwiftTests",
-            dependencies: ["ReSwift"],
-            path: "ReSwiftTests"
-        )
-    ]
-)
+let pkg = Package(name: "ReSwift")
+pkg.platforms = [
+    .macOS(.v14), .iOS(.v17), .tvOS(.v17), .watchOS(.v10)
+]
+pkg.products = [
+    .library(name: "ReSwift", targets: ["ReSwift"])
+]
+
+let pmk: Target = .target(name: "ReSwift")
+pmk.path = "ReSwift"
+pkg.targets = [
+    pmk,
+    .testTarget(name: "ReSwiftTests", dependencies: ["ReSwift"], path: "ReSwiftTests")
+]

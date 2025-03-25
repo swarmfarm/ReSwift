@@ -52,6 +52,7 @@ open class BatchStore<State>: StoreType {
     
     /// Queue of actions to batch process
     private var _batchedActions: [Action] = []
+    private var _keyedBatchedActions: [String: Action] = [:]
 
     public lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
@@ -342,6 +343,7 @@ open class BatchStore<State>: StoreType {
         }
     }
   
+    
    
     open func dispatchAsync(_ action: Action, concurrent: Bool = false) {
         queue.async(execute: { [weak self] in
@@ -354,7 +356,13 @@ open class BatchStore<State>: StoreType {
                 return
             }
             if let batchingWindow = self._batchingWindow {
-                self._batchedActions.append(action)
+                if let action = action as? BatchedKeyedAction {
+                    self._keyedBatchedActions[action.batchKey] = action
+                }
+                else {
+                    self._batchedActions.append(action)
+                }
+               
                 if !self._isBatching {
                     self._isBatching = true
                     self.batchingQueue.asyncAfter(
@@ -369,7 +377,11 @@ open class BatchStore<State>: StoreType {
                             for action in self._batchedActions {
                                 self.dispatchFunction(action)
                             }
+                            for action in self._keyedBatchedActions.values {
+                                self.dispatchFunction(action)
+                            }
                             self._batchedActions = []
+                            self._keyedBatchedActions = [:]
                             
                             self.notifySubscriptions(previousState: currentState)
                             self._isBatching = false
