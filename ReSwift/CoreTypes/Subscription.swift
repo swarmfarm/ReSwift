@@ -84,7 +84,7 @@ final class SubscriptionBox<State: Sendable>: Hashable, Sendable {
 /// reactive programming libraries.
 final public actor Subscription<State: Sendable>: Sendable {
 
-    private  func _select<Substate>(
+    private nonisolated func _select<Substate>(
         _ selector: @Sendable @escaping (borrowing  State) -> Substate
         ) -> Subscription<Substate>
     {
@@ -109,7 +109,7 @@ final public actor Subscription<State: Sendable>: Sendable {
 
     /// Provides a subscription that selects a substate of the state of the original subscription.
     /// - parameter selector: A closure that maps a state to a selected substate
-    public borrowing func select<Substate>(
+    public nonisolated borrowing func select<Substate>(
         _ selector: @Sendable @escaping (borrowing State) -> Substate
         ) -> Subscription<Substate>
     {
@@ -118,7 +118,7 @@ final public actor Subscription<State: Sendable>: Sendable {
 
     /// Provides a subscription that selects a substate of the state of the original subscription.
     /// - parameter keyPath: A key path from a state to a substate
-    public borrowing func select<Substate>(
+    public nonisolated borrowing func select<Substate>(
         _ keyPath: KeyPath<State, Substate>
         ) -> Subscription<Substate>
     {
