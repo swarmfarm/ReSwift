@@ -6,7 +6,7 @@
 //  Copyright © 2015 ReSwift Community. All rights reserved.
 //
 
-public protocol AnyStoreSubscriber: AnyObject {
+public protocol AnyStoreSubscriber: AnyObject, Sendable {
     var idKey: String  {get set}
 
     // swiftlint:disable:next identifier_name
