@@ -18,7 +18,7 @@ import os
  */
 typealias Store<T> = BatchStore<T>
 
-open class BatchStore<State>: StoreType {
+open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
   
    
     

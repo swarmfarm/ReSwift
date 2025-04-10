@@ -14,7 +14,7 @@
  */
 public protocol StoreType: DispatchingStoreType {
 
-    associatedtype State
+    associatedtype State: Sendable
 
     /// The current state stored in the store.
     var state: State! { get }

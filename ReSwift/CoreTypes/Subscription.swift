@@ -6,6 +6,8 @@
 //  Copyright © 2016 ReSwift Community. All rights reserved.
 //
 
+extension KeyPath: @unchecked @retroactive Sendable {}
+
 /// A box around subscriptions and subscribers.
 ///
 /// Acts as a type-erasing wrapper around a subscription and its transformed subscription.
@@ -15,10 +17,10 @@
 /// The box subscribes either to the original subscription, or if available to the transformed
 /// subscription and passes any values that come through this subscriptions to the subscriber.
 import Foundation
-class SubscriptionBox<State>: Hashable {
+final class SubscriptionBox<State: Sendable>: Hashable, Sendable {
 
     private let originalSubscription: Subscription<State>
-    weak var subscriber: AnyStoreSubscriber?
+    nonisolated(unsafe) weak var subscriber: AnyStoreSubscriber?
     let id: UUID
     #if swift(>=5.0)
         func hash(into hasher: inout Hasher) {
@@ -80,10 +82,10 @@ class SubscriptionBox<State>: Hashable {
 /// values from the store are forwarded to the subscriber, and how they are transformed.
 /// The subscription acts as a very-light weight signal/observable that you might know from
 /// reactive programming libraries.
-public class Subscription<State> {
+final public actor Subscription<State: Sendable>: Sendable {
 
     private  func _select<Substate>(
-        _ selector: @escaping (borrowing  State) -> Substate
+        _ selector: @Sendable @escaping (borrowing  State) -> Substate
         ) -> Subscription<Substate>
     {
         return Subscription<Substate> { sink in
@@ -97,7 +99,7 @@ public class Subscription<State> {
 
     /// Initializes a subscription with a sink closure. The closure provides a way to send
     /// new values over this subscription.
-    public init(sink: @escaping (@escaping (State?, State) -> Void) -> Void) {
+    public init(sink: @Sendable @escaping (@Sendable @escaping (State?, State) -> Void) -> Void) {
         // Provide the caller with a closure that will forward all values
         // to observers of this subscription.
         sink {  old, new in
@@ -108,7 +110,7 @@ public class Subscription<State> {
     /// Provides a subscription that selects a substate of the state of the original subscription.
     /// - parameter selector: A closure that maps a state to a selected substate
     public borrowing func select<Substate>(
-        _ selector: @escaping (borrowing State) -> Substate
+        _ selector: @Sendable @escaping (borrowing State) -> Substate
         ) -> Subscription<Substate>
     {
         return self._select(selector)
@@ -128,7 +130,7 @@ public class Subscription<State> {
     /// thus should be skipped and not forwarded to subscribers.
     /// - parameter oldState: The store's old state, before the action is reduced.
     /// - parameter newState: The store's new state, after the action has been reduced.
-    public func skipRepeats(_ isRepeat: @escaping (_ oldState: State, _ newState: State) -> Bool)
+    public nonisolated func skipRepeats(_ isRepeat: @Sendable @escaping (_ oldState: State, _ newState: State) -> Bool)
         -> Subscription<State> {
         return Subscription<State> { sink in
             self.observer = { oldState, newState in
@@ -148,20 +150,20 @@ public class Subscription<State> {
 
     /// The closure called with changes from the store.
     /// This closure can be written to for use in extensions to Subscription similar to `skipRepeats`
-    public var observer: ((State?, State) -> Void)?
+    public nonisolated(unsafe) var observer: (@Sendable (State?, State) -> Void)?
 
     // MARK: Internals
 
     init() {}
 
     /// Sends new values over this subscription. Observers will be notified of these new values.
-    func newValues(oldState: State?, newState: State) {
+    nonisolated func newValues(oldState: State?, newState: State) {
         self.observer?(oldState, newState)
     }
 }
 
 extension Subscription where State: Equatable {
-    public func skipRepeats() -> Subscription<State>{
+    public nonisolated func skipRepeats() -> Subscription<State>{
         return self.skipRepeats(==)
     }
 }
@@ -176,7 +178,7 @@ extension Subscription {
     /// thus should be skipped and not forwarded to subscribers.
     /// - parameter oldState: The store's old state, before the action is reduced.
     /// - parameter newState: The store's new state, after the action has been reduced.
-    public func skip(when: @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
+    public func skip(when: @Sendable @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
         return self.skipRepeats(when)
     }
 
@@ -187,7 +189,7 @@ extension Subscription {
     /// - parameter oldState: The store's old state, before the action is reduced.
     /// - parameter newState: The store's new state, after the action has been reduced.
     /// the subscriber.
-    public func only(when: @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
+    public func only(when: @Sendable @escaping (_ oldState: State, _ newState: State) -> Bool) -> Subscription<State> {
         return self.skipRepeats { oldState, newState in
             return !when(oldState, newState)
         }
