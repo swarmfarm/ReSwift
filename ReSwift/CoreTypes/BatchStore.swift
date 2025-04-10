@@ -210,10 +210,10 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
            
         }
        
-        var subscriptionsToRemove = [SubscriptionBox<State>]()
+        var subscriptionsToRemove = Set<SubscriptionBox<State>>()
         subscriptions.forEach { subscription in
             if subscription.subscriber == nil {
-                subscriptionsToRemove.append(subscription)
+                subscriptionsToRemove.insert(subscription)
             }
             else {
                 #if DEBUG
@@ -227,9 +227,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                         defer {
                             self?.group.leave()
                         }
-                        guard  let self else {
-                            return
-                        }
+
                         if subscription.subscriber != nil {
                             #if DEBUG
                             let log = OSLog(subsystem: "com.reswift", category: "notify.concurrent")
@@ -265,10 +263,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
             isRunningInGroup = false
             
         }
-        subscriptionsToRemove.forEach { subscription in
-            subscription.subscriber = nil
-            subscriptions.remove(subscription)
-        }
+        subscriptions.subtract(subscriptionsToRemove)
         
     }
     // swiftlint:disable:next identifier_name
