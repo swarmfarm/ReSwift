@@ -6,6 +6,15 @@
 //  Copyright © 2015 ReSwift Community. All rights reserved.
 //
 
-public typealias DispatchFunction =  @Sendable (Action) async -> Void
-public typealias Middleware<State> =  @Sendable (@escaping @Sendable DispatchFunction, @escaping @Sendable () async -> State?)
-    ->  @Sendable (@escaping  @Sendable DispatchFunction) -> DispatchFunction
+/// A dispatch function takes an `Action` and processes it, potentially asynchronously.
+public typealias DispatchFunction = @Sendable (Action) async -> Void
+
+/// A middleware function can wrap the dispatch and getState logic, potentially intercepting actions.
+/// The shape is basically:
+///    middleware(dispatch, getState) -> (next: DispatchFunction) -> DispatchFunction
+public typealias Middleware<State> = @Sendable (
+    @escaping @Sendable DispatchFunction,         // dispatch
+    @escaping @Sendable () async -> State?        // getState
+) -> @Sendable (
+    @escaping @Sendable DispatchFunction
+) -> DispatchFunction
