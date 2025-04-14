@@ -7,6 +7,7 @@ import Foundation
  the default usage of this interface. Can be used for store variables where you don't
  care about the state, but want to be able to dispatch actions.
  */
+@ReSwiftStoreActor
 public protocol DispatchingStoreType {
 
     /**
@@ -20,5 +21,5 @@ public protocol DispatchingStoreType {
 
      - parameter action: The action that is being dispatched to the store
      */
-    func dispatch(_ action: Action)
+    func dispatch(_ action: Action) async
 }

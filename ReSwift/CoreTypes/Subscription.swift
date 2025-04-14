@@ -66,11 +66,11 @@ final class SubscriptionBox<State: Sendable>: Hashable, Sendable {
         }
     }
 
-    func newValues(oldState: State, newState: State) {
+    func newValues(oldState: State, newState: State) async {
         // We pass all new values through the original subscription, which accepts
         // values of type `<State>`. If present, transformed subscriptions will
         // receive this update and transform it before passing it on to the subscriber.
-        self.originalSubscription.newValues(oldState: oldState, newState: newState)
+        await self.originalSubscription.newValues(oldState: oldState, newState: newState)
     }
 
     static func == (left: SubscriptionBox<State>, right: SubscriptionBox<State>) -> Bool {
@@ -90,7 +90,7 @@ final public actor Subscription<State: Sendable>: Sendable {
     {
         return Subscription<Substate> { sink in
             self.observer = { oldState, newState in
-                sink(oldState.map(selector) ?? nil, selector(newState))
+                await sink(oldState.map(selector) ?? nil, selector(newState))
             }
         }
     }
@@ -99,11 +99,11 @@ final public actor Subscription<State: Sendable>: Sendable {
 
     /// Initializes a subscription with a sink closure. The closure provides a way to send
     /// new values over this subscription.
-    public init(sink: @Sendable @escaping (@Sendable @escaping (State?, State) -> Void) -> Void) {
+    public init(sink: @Sendable @escaping (@Sendable @escaping (State?, State) async -> Void) -> Void) {
         // Provide the caller with a closure that will forward all values
         // to observers of this subscription.
         sink {  old, new in
-            self.newValues(oldState: old, newState: new)
+            await self.newValues(oldState: old, newState: new)
         }
     }
 
@@ -137,12 +137,12 @@ final public actor Subscription<State: Sendable>: Sendable {
                 switch (oldState, newState) {
                 case let (old?, new):
                     if !isRepeat(old, new) {
-                        sink(oldState, newState)
+                        await sink(oldState, newState)
                     } else {
                         return
                     }
                 default:
-                    sink(oldState, newState)
+                    await sink(oldState, newState)
                 }
             }
         }
@@ -150,15 +150,15 @@ final public actor Subscription<State: Sendable>: Sendable {
 
     /// The closure called with changes from the store.
     /// This closure can be written to for use in extensions to Subscription similar to `skipRepeats`
-    public nonisolated(unsafe) var observer: (@Sendable (State?, State) -> Void)?
+    public nonisolated(unsafe) var observer: (@Sendable (State?, State) async -> Void)?
 
     // MARK: Internals
 
     init() {}
 
     /// Sends new values over this subscription. Observers will be notified of these new values.
-    nonisolated func newValues(oldState: State?, newState: State) {
-        self.observer?(oldState, newState)
+    func newValues(oldState: State?, newState: State) async {
+        await self.observer?(oldState, newState)
     }
 }
 

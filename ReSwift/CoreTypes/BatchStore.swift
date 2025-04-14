@@ -18,29 +18,26 @@ import os
  */
 typealias Store<T> = BatchStore<T>
 
-open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
-  
-   
+@globalActor
+public actor ReSwiftStoreActor {
+    public static let shared = ReSwiftStoreActor()
+}
+
+@ReSwiftStoreActor
+open class BatchStore<State: Sendable>:  @unchecked Sendable {
+
     
     
     typealias SubscriptionType = SubscriptionBox<State>
 
     private(set) public var state: State!
     
-    /// Working queue for timing purposes
-    private lazy var batchingQueue: DispatchQueue = {
-        self.queue
-    }()
+   
     
     /// Time interval for the system to batch by. Set to nil to disable batching altogether
     public var batchingWindow: TimeInterval? = nil {
         didSet {
-            batchingQueue.async { [weak self] in
-                guard let self = self else {
-                    return
-                }
-                self._batchingWindow = self.batchingWindow
-            }
+            self._batchingWindow = self.batchingWindow
         }
     }
     
@@ -127,7 +124,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                 { dispatchFunction, middleware in
                     // If the store get's deinitialized before the middleware is complete; drop
                     // the action without dispatching.
-                    let dispatch: (Action) -> Void = { [weak self] in self?.dispatch($0, concurrent: false) }
+                    let dispatch: (Action) async -> Void = { [weak self] in await self?.dispatch($0, concurrent: false) }
                     let getState: () -> State? = { [weak self] in self?.state }
                     return middleware(dispatch, getState)(dispatchFunction)
             })
@@ -135,7 +132,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
 
     fileprivate func _subscribe<SelectedState, S: StoreSubscriber>(
         _ subscriber: S, originalSubscription: Subscription<State>,
-        transformedSubscription: Subscription<SelectedState>?)
+        transformedSubscription: Subscription<SelectedState>?) async
         where S.StoreSubscriberStateType == SelectedState
     {
         let subscriptionBox = self.subscriptionBox(
@@ -146,17 +143,17 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
 
         subscriptions.update(with: subscriptionBox)
 
-        originalSubscription.newValues(oldState: nil, newState: state)
+        await originalSubscription.newValues(oldState: nil, newState: state)
     }
 
-    open func subscribe<S: StoreSubscriber>(_ subscriber: S)
+    open func subscribe<S: StoreSubscriber>(_ subscriber: S) async
         where S.StoreSubscriberStateType == State {
-            subscribe(subscriber, transform: nil)
+            await subscribe(subscriber, transform: nil)
     }
 
     open func subscribe<SelectedState, S: StoreSubscriber>(
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
-    ) where S.StoreSubscriberStateType == SelectedState
+    ) async where S.StoreSubscriberStateType == SelectedState
     {
         // Create a subscription for the new subscriber.
         let originalSubscription = Subscription<State>()
@@ -164,7 +161,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
         // the subscription, e.g. in order to subselect parts of the store's state.
         let transformedSubscription = transform?(originalSubscription)
 
-        _subscribe(subscriber, originalSubscription: originalSubscription,
+        await _subscribe(subscriber, originalSubscription: originalSubscription,
                    transformedSubscription: transformedSubscription)
     }
 
@@ -184,20 +181,20 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
     let log = OSLog(subsystem: "com.reswift", category: "notify")
     #endif
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
-        runSync { [weak self] in
-            if let index = self?.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
-                let subscription = self?.subscriptions[index]
-                subscription?.subscriber = nil
-                self?.subscriptions.remove(at: index)
-            }
+        
+        if let index = self.subscriptions.firstIndex(where: { return $0.subscriber === subscriber }) {
+            let subscription = self.subscriptions[index]
+            subscription.subscriber = nil
+            self.subscriptions.remove(at: index)
         }
+    
     }
 
     let group = DispatchGroup()
     
 
     private var isRunningInGroup = false
-    func notifySubscriptions(previousState: State, concurrent: Bool = false) {
+    func notifySubscriptions(previousState: State, concurrent: Bool = false) async {
         let nextState = self.state!
         let previousState = previousState
         
@@ -211,7 +208,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
         }
        
         var subscriptionsToRemove = Set<SubscriptionBox<State>>()
-        subscriptions.forEach { subscription in
+        for subscription in subscriptions {
             if subscription.subscriber == nil {
                 subscriptionsToRemove.insert(subscription)
             }
@@ -221,12 +218,8 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                 let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
                
                 #endif
+//                TODO: Make this concurrent again
                 if shouldRunConcurrently {
-                    group.enter()
-                    concurrentQueue.async { [weak self] in
-                        defer {
-                            self?.group.leave()
-                        }
 
                         if subscription.subscriber != nil {
                             #if DEBUG
@@ -236,11 +229,9 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                                 os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                             }
                             #endif
-                            subscription.newValues(oldState: previousState, newState: nextState)
+                            await subscription.newValues(oldState: previousState, newState: nextState)
                            
                         }
-                        
-                    }
                 } else {
                     #if DEBUG
                     os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
@@ -248,21 +239,21 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                         os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                     }
                     #endif
-                    subscription.newValues(oldState: previousState, newState: nextState)
+                    await subscription.newValues(oldState: previousState, newState: nextState)
                     
                     
                 }
                 
             }
-            
         }
+       
         
-        if shouldRunConcurrently {
-            group.wait()
-    
-            isRunningInGroup = false
-            
-        }
+//        if shouldRunConcurrently {
+//            
+//    
+//            isRunningInGroup = false
+//            
+//        }
         subscriptions.subtract(subscriptionsToRemove)
         
     }
@@ -282,74 +273,37 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
         isDispatching.value { $0 = false }
     }
     
-    public func dispatch(_ action: Action, concurrent: Bool = false) {
+    public func dispatch(_ action: Action, concurrent: Bool = false) async {
         guard let currentState = state else {
             return
         }
-        dispatchFunction(action)
-        notifySubscriptions(previousState: currentState, concurrent: concurrent)
+        await dispatchFunction(action)
+        await notifySubscriptions(previousState: currentState, concurrent: concurrent)
     }
 
   
-    public func dispatch(_ action: any Action) {
-        dispatch(action, concurrent: false)
+    public func dispatch(_ action: any Action) async {
+        await dispatch(action, concurrent: false)
     }
     
-    let queueKey = DispatchSpecificKey<Int>()
-    var queueContext = unsafeBitCast(BatchStore.self, to: Int.self)
-    var concurrentQueueContext = unsafeBitCast(BatchStore.self, to: Int.self)
+  
 
-    lazy var concurrentQueue: DispatchQueue = {
-        let value = DispatchQueue(
-            label: "com.swarmfarm-reswift.concurrentQueue",
-            qos: .userInteractive,
-            attributes: .concurrent
-        )
-        
-        value.setSpecific(key: self.queueKey, value: concurrentQueueContext)
-        return value
-    }()
-
-    lazy var queue: DispatchQueue = {
-        let value = DispatchQueue(label: "com.swarmfarm-reswift.mainStoreQueue")
-        value.setSpecific(key: self.queueKey, value: queueContext)
-        return value
-    }()
-
-    open func dispatchSync(_ action: Action, concurrent: Bool = true) {
-       
-        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
-            queue.sync(execute: { [weak self] in
-                guard let self else {return}
-                self.dispatch(action, concurrent: concurrent)
-            })
-        }
-        else {
-            self.dispatch(action, concurrent: false)
-        }
+   
+    open func dispatchSync(_ action: Action, concurrent: Bool = true) async {
+        await self.dispatch(action, concurrent: concurrent)
     }
     
-    func runSync(_ block: @escaping () -> Void) {
-        if DispatchQueue.getSpecific(key: self.queueKey) != queueContext && DispatchQueue.getSpecific(key: self.queueKey) != concurrentQueueContext {
-            queue.sync(execute: block)
-        }
-        else {
-            block()
-        }
+    func runSync(_ block: @Sendable @escaping () -> Void) {
+        block()
     }
   
     
    
-    open func dispatchAsync(_ action: Action, concurrent: Bool = false) {
-        queue.async(execute: { [weak self] in
-            self?.dispatch(action, concurrent: concurrent)
-        })
+    open func dispatchAsync(_ action: Action, concurrent: Bool = false) async {
+        await self.dispatch(action, concurrent: concurrent)
     }
-    open func dispatchBatched(_ action: Action) {
-        batchingQueue.async { [weak self] in
-            guard let self = self else {
-                return
-            }
+    open func dispatchBatched(_ action: Action) async {
+        
             if let batchingWindow = self._batchingWindow {
                 if let action = action as? BatchedKeyedAction {
                     self._keyedBatchedActions[action.batchKey] = action
@@ -360,9 +314,8 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                
                 if !self._isBatching {
                     self._isBatching = true
-                    self.batchingQueue.asyncAfter(
-                        deadline: DispatchTime.now() + batchingWindow,
-                        execute: { [weak self] in
+                    Task { @Sendable [weak self] in
+                            try await Task.sleep(for: .seconds(batchingWindow))
                             guard let self = self else {
                                 return
                             }
@@ -370,26 +323,26 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
                                 return
                             }
                             for action in self._batchedActions {
-                                self.dispatchFunction(action)
+                                await self.dispatchFunction(action)
                             }
                             for action in self._keyedBatchedActions.values {
-                                self.dispatchFunction(action)
+                                await self.dispatchFunction(action)
                             }
                             self._batchedActions = []
                             self._keyedBatchedActions = [:]
                             
-                            self.notifySubscriptions(previousState: currentState)
+                            await self.notifySubscriptions(previousState: currentState)
                             self._isBatching = false
                         }
-                    )
+                    
                 }
             }
             else
             {
                 // Fallback to synchronous (within the context of the DispatchQueue) if batching is off
-                self.dispatch(action, concurrent: false)
+                await self.dispatch(action, concurrent: false)
             }
-        }
+        
     }
     
     public func dispatch(_ asyncActionCreator: Action, callback: ((State) -> Void)?) {
@@ -413,29 +366,81 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
         _ actionCreatorCallback: @escaping ((ActionCreator) -> Void)
     ) -> Void
     
-    public func dispatch(_ actionCreator: (State, BatchStore<State>) -> (any Action)?) {
+    public func dispatch(_ actionCreator: (State, BatchStore<State>) -> (any Action)?) async {
         if let action = actionCreator(state, self) {
-            dispatch(action)
+            await dispatch(action)
         }
     }
     
-    public func dispatch(_ asyncActionCreator: @escaping (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void) {
-        dispatch(asyncActionCreator, callback: nil)
-
+    public func dispatch(
+        _ asyncActionCreator: (
+            State,
+            BatchStore<State>,
+            @escaping (
+                (
+                    (
+                        State,
+                        BatchStore<State>
+                    )  -> (
+                        any Action
+                    )?
+                ) async -> Void
+            )
+        ) -> Void
+    ) {
+        dispatch(
+            asyncActionCreator,
+            callback: nil
+        )
     }
     
-    public func dispatch(_ asyncActionCreator: (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void, callback: ((State) -> Void)?) {
-        asyncActionCreator(state, self) { [weak self] actionProvider in
-            guard let self else {return}
-            let action = actionProvider(self.state, self)
-
+    public func dispatch(
+        _ asyncActionCreator: (
+            State,
+            BatchStore<State>,
+            @escaping (
+                (
+                    (
+                        State,
+                        BatchStore<State>
+                    )  -> (
+                        any Action
+                    )?
+                ) async -> Void
+            )
+        ) -> Void,
+        callback: (
+            @Sendable (
+                State
+            ) -> Void
+        )?
+    ) {
+        asyncActionCreator(
+            state,
+            self
+        ) { [weak self] actionProvider in
+            guard let self else {
+                return
+            }
+            let action =  actionProvider(
+                self.state,
+                self
+            )
+            
             if let action = action {
-                self.dispatch(action)
-                callback?(self.state)
+                await self.dispatch(
+                    action
+                )
+                callback?(
+                    self.state
+                )
             }
         }
     }
     
+
+
+   
    
     
 }
@@ -445,7 +450,7 @@ open class BatchStore<State: Sendable>: StoreType, @unchecked Sendable {
 extension BatchStore {
     public func subscribe<SelectedState: Equatable, S: StoreSubscriber>(
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
-        ) where S.StoreSubscriberStateType == SelectedState
+        ) async where S.StoreSubscriberStateType == SelectedState
     {
         #if DEBUG
         let subscriberTypeName = String(describing: type(of: subscriber))
@@ -455,17 +460,17 @@ extension BatchStore {
         
         os_signpost(.begin, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
         #endif
-        runSync { [weak self] in
-            guard let self else {return}
-            let originalSubscription = Subscription<State>()
+        
+        
+        let originalSubscription = Subscription<State>()
 
-            var transformedSubscription = transform?(originalSubscription)
-            if self.subscriptionsAutomaticallySkipRepeats {
-                transformedSubscription = transformedSubscription?.skipRepeats()
-            }
-            self._subscribe(subscriber, originalSubscription: originalSubscription,
-                       transformedSubscription: transformedSubscription)
+        var transformedSubscription = transform?(originalSubscription)
+        if self.subscriptionsAutomaticallySkipRepeats {
+            transformedSubscription = transformedSubscription?.skipRepeats()
         }
+        await self._subscribe(subscriber, originalSubscription: originalSubscription,
+                   transformedSubscription: transformedSubscription)
+    
         
         // End the signpost interval
 #if DEBUG
@@ -476,11 +481,24 @@ extension BatchStore {
 
 extension BatchStore where State: Equatable {
     public func subscribe<S: StoreSubscriber>(_ subscriber: S)
-        where S.StoreSubscriberStateType == State {
+        async where S.StoreSubscriberStateType == State {
             guard subscriptionsAutomaticallySkipRepeats else {
-                subscribe(subscriber, transform: nil)
+                await subscribe(subscriber, transform: nil)
                 return
             }
-            subscribe(subscriber, transform: { $0.skipRepeats() })
+            await subscribe(subscriber, transform: { $0.skipRepeats() })
+    }
+}
+
+extension Array {
+    func asyncReduce<T>(
+        _ initialResult: T,
+        _ nextPartialResult: @escaping (T, Element) async -> T
+    ) async -> T {
+        var result = initialResult
+        for element in self {
+            result = await nextPartialResult(result, element)
+        }
+        return result
     }
 }

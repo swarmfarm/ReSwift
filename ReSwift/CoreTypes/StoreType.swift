@@ -12,6 +12,7 @@
  Stores receive actions and use reducers combined with these actions, to calculate state changes.
  Upon every state update a store informs all of its subscribers.
  */
+@ReSwiftStoreActor
 public protocol StoreType: DispatchingStoreType {
 
     associatedtype State: Sendable
@@ -33,7 +34,7 @@ public protocol StoreType: DispatchingStoreType {
      - parameter subscriber: Subscriber that will receive store updates
      - note: Subscriptions are not ordered, so an order of state updates cannot be guaranteed.
      */
-    func subscribe<S: StoreSubscriber>(_ subscriber: S) where S.StoreSubscriberStateType == State
+    func subscribe<S: StoreSubscriber>(_ subscriber: S) async where S.StoreSubscriberStateType == State
 
     /**
      Subscribes the provided subscriber to this store.
@@ -49,7 +50,7 @@ public protocol StoreType: DispatchingStoreType {
      */
     func subscribe<SelectedState, S: StoreSubscriber>(
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
-    ) where S.StoreSubscriberStateType == SelectedState
+    ) async where S.StoreSubscriberStateType == SelectedState
 
     /**
      Subscribes the provided subscriber to this store.
@@ -68,7 +69,7 @@ public protocol StoreType: DispatchingStoreType {
      */
     func subscribe<SelectedState: Equatable, S: StoreSubscriber>(
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
-    ) where S.StoreSubscriberStateType == SelectedState
+    ) async where S.StoreSubscriberStateType == SelectedState
 
     /**
      Unsubscribes the provided subscriber. The subscriber will no longer
@@ -76,7 +77,7 @@ public protocol StoreType: DispatchingStoreType {
 
      - parameter subscriber: Subscriber that will be unsubscribed
      */
-    func unsubscribe(_ subscriber: AnyStoreSubscriber)
+    func unsubscribe(_ subscriber: AnyStoreSubscriber) async
 
     /**
      Dispatches an action creator to the store. Action creators are functions that generate
@@ -108,7 +109,7 @@ public protocol StoreType: DispatchingStoreType {
      store.dispatch( noteActionCreator.deleteNote(3) )
      ```
      */
-    func dispatch(_ actionCreator: ActionCreator)
+    func dispatch(_ actionCreator: ActionCreator) async
     
     /**
      
@@ -143,7 +144,7 @@ public protocol StoreType: DispatchingStoreType {
      store.dispatch( noteActionCreator.deleteNote(3) )
      ```
      */
-    func dispatch(_ action: Action, concurrent: Bool)
+    func dispatch(_ action: Action, concurrent: Bool) async
 
 
     /**
@@ -172,7 +173,7 @@ public protocol StoreType: DispatchingStoreType {
      a successful login). However, you should try to use this callback very seldom as it
      deviates slightly from the unidirectional data flow principal.
      */
-    associatedtype DispatchCallback = (State) -> Void
+    associatedtype DispatchCallback = @Sendable (State) -> Void
 
     /**
      An ActionCreator is a function that, based on the received state argument, might or might not
@@ -194,10 +195,45 @@ public protocol StoreType: DispatchingStoreType {
      ```
 
      */
-    associatedtype ActionCreator = (_ state: State, _ store: StoreType) -> Action?
+    associatedtype ActionCreator = (_ state: State, _ store: BatchStore<State>) -> (any Action)?
+
 
     /// AsyncActionCreators allow the developer to wait for the completion of an async action.
-    associatedtype AsyncActionCreator =
-        (_ state: State, _ store: StoreType,
-         _ actionCreatorCallback: (ActionCreator) -> Void) -> Void
+    associatedtype AsyncActionCreator = (
+            _ state: State,
+            _ store: Self,
+            _ callback: @escaping (@Sendable (State, Self) -> (any Action)?) async -> Void
+        ) -> Void
 }
+
+//public func dispatch(
+//    _ asyncActionCreator:
+//     (  State,
+//        BatchStore<State>,
+//        @escaping (
+//            (
+//                (
+//                    State,
+//                    BatchStore<State>
+//                )  -> (
+//                    any Action
+//                )?
+//            ) async -> Void
+//        )
+//     ) -> Void
+//) {
+//    dispatch(asyncActionCreator, callback: nil)
+//}
+//
+//public func dispatch(_ asyncActionCreator: (State, BatchStore<State>, @escaping (((State, BatchStore<State>)  -> (any Action)?) async -> Void)) -> Void, callback: (@Sendable (State) async -> Void)?) {
+//    asyncActionCreator(state, self) { [weak self] actionProvider in
+//        guard let self else {return}
+//        let action =  actionProvider(self.state, self)
+//
+//        if let action = action {
+//            await self.dispatch(action)
+//            await callback?(self.state)
+//        }
+//    }
+//}
+
