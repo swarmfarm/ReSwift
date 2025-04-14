@@ -24,7 +24,7 @@ public actor ReSwiftStoreActor {
 }
 
 @ReSwiftStoreActor
-open class BatchStore<State: Sendable>:  @unchecked Sendable {
+open class BatchStore<State: Sendable> {
 
     
     
@@ -114,19 +114,25 @@ open class BatchStore<State: Sendable>:  @unchecked Sendable {
         self.state = state
     }
 
-    private func createDispatchFunction() -> DispatchFunction! {
+    private func createDispatchFunction() ->  DispatchFunction! {
         // Wrap the dispatch function with all middlewares
         return middleware
             .reversed()
             .reduce(
-                { [unowned self] action in
-                    self._defaultDispatch(action: action) },
-                { dispatchFunction, middleware in
+                {  @Sendable [unowned self] action in
+                    await self._defaultDispatch(action: action) },
+                { @Sendable dispatchFunction, middleware in
                     // If the store get's deinitialized before the middleware is complete; drop
                     // the action without dispatching.
-                    let dispatch: (Action) async -> Void = { [weak self] in await self?.dispatch($0, concurrent: false) }
-                    let getState: () -> State? = { [weak self] in self?.state }
-                    return middleware(dispatch, getState)(dispatchFunction)
+                    let dispatch:  @Sendable (Action) async -> Void = {  @Sendable [weak self] in await self?.dispatch($0, concurrent: false) }
+                    let getState: @Sendable () async -> State? = {  [weak self] in await self?.state }
+                    
+                    return  middleware(
+                        dispatch,
+                        getState
+                    )(
+                        dispatchFunction
+                    )
             })
     }
 
