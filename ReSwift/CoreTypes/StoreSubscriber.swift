@@ -10,13 +10,13 @@ public protocol AnyStoreSubscriber: AnyObject, Sendable {
     var idKey: String  {get set}
 
     // swiftlint:disable:next identifier_name
-    func _newState(state: Any)
+    func _newState(state: Any) async
 }
 
 public protocol StoreSubscriber: AnyStoreSubscriber {
     associatedtype StoreSubscriberStateType
 
-    func newState(state: StoreSubscriberStateType)
+    func newState(state: StoreSubscriberStateType) async
 }
 
 
@@ -33,9 +33,9 @@ extension StoreSubscriber {
 }
 extension StoreSubscriber {
     // swiftlint:disable:next identifier_name
-    public func _newState(state: Any) {
+    public func _newState(state: Any) async {
         if let typedState = state as? StoreSubscriberStateType {
-            newState(state: typedState)
+            await newState(state: typedState)
         }
     }
 }

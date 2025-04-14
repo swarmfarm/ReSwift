@@ -55,13 +55,13 @@ final class SubscriptionBox<State: Sendable>: Hashable, Sendable {
         // and forward all new values to the subscriber.
         if let transformedSubscription = transformedSubscription {
             transformedSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
+                await self.subscriber?._newState(state: newState as Any)
             }
         // If we haven't received a transformed subscription, we forward all values
         // from the original subscription.
         } else {
             originalSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
+                await self.subscriber?._newState(state: newState as Any)
             }
         }
     }
