@@ -14,7 +14,7 @@ public protocol AnyStoreSubscriber: AnyObject, Sendable {
 }
 
 public protocol StoreSubscriber: AnyStoreSubscriber {
-    associatedtype StoreSubscriberStateType
+    associatedtype StoreSubscriberStateType: Sendable
 
     func newState(state: StoreSubscriberStateType) async
 }
