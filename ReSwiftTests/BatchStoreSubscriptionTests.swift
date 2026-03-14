@@ -95,6 +95,28 @@ final class BatchStoreSubscriptionTests: XCTestCase {
         XCTAssertEqual(store.state.testValue, 5)
     }
 
+    func testNestedDispatchResumesOuterNotificationWithOriginalStateSnapshot() {
+        let store = Store(reducer: appReducer, state: TestAppState())
+        var didDispatchFollowUp = false
+        var secondSubscriberValues: [Int?] = []
+
+        let firstSubscriber = ClosureSubscriber<TestAppState> { state in
+            guard state.testValue == 1, !didDispatchFollowUp else { return }
+            didDispatchFollowUp = true
+            store.dispatchSync(SetValueAction(value: 2))
+        }
+        let secondSubscriber = ClosureSubscriber<TestAppState> { state in
+            secondSubscriberValues.append(state.testValue)
+        }
+
+        store.subscribe(firstSubscriber)
+        store.subscribe(secondSubscriber)
+
+        store.dispatch(SetValueAction(value: 1))
+
+        XCTAssertEqual(secondSubscriberValues, [nil, 2, 1])
+    }
+
     func testSubscriberCanUnsubscribeItselfDuringNotification() {
         let store = Store(reducer: appReducer, state: TestAppState())
         var subscriber: ClosureSubscriber<TestAppState>?

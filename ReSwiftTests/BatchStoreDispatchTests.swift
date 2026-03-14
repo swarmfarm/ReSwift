@@ -78,6 +78,27 @@ final class BatchStoreDispatchTests: XCTestCase {
         XCTAssertEqual(store.state.label, "10")
     }
 
+    func testMiddlewareDispatchRunsBeforeContinuingCurrentAction() {
+        let middleware: DefaultMiddleware<TestAppState> = { action, context in
+            guard action is NoOpAction else {
+                context.next(action)
+                return
+            }
+
+            context.dispatch(AppendLogAction(value: "dispatched"))
+            context.next(AppendLogAction(value: "continued"))
+        }
+        let store = Store(
+            reducer: appReducer,
+            state: TestAppState(),
+            middleware: [middleware]
+        )
+
+        store.dispatch(NoOpAction())
+
+        XCTAssertEqual(store.state.log, ["dispatched", "continued"])
+    }
+
     func testMiddlewareCanReadStateAndSwallowAction() {
         let middleware: DefaultMiddleware<TestAppState> = { action, context in
             if context.getState()?.label == "OK", (action as? SetLabelAction)?.value != "Blocked" {

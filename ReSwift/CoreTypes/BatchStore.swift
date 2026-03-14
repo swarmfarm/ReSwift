@@ -24,23 +24,50 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         let box: SubscriptionType
     }
 
-    private final class TerminalMiddlewareRuntime: MiddlewareRuntime<State, ActionType>, @unchecked Sendable {
+    private enum Frame {
+        case runAction(ActionType)
+        case resumeMiddleware(action: ActionType, index: Int)
+        case reduce(ActionType)
+        case notifySubscribers(
+            startIndex: Int,
+            snapshot: ContiguousArray<SubscriptionRecord>,
+            oldState: State?,
+            newState: State
+        )
+    }
+
+    /// Runtime used when invoking middleware; records dispatch/next for adapter translation.
+    /// When used as escaped context (dispatch called later from outside adapter), pushes and runs.
+    private final class RecordingMiddlewareRuntime: MiddlewareRuntime<State, ActionType>, @unchecked Sendable {
         weak var store: BatchStore?
+        var dispatches: ContiguousArray<ActionType> = []
+        var nextAction: ActionType?
+        var isInAdapterCall = false
+        var pushRunActionAndRunEngineLoop: (@Sendable (ActionType) -> Void)?
 
         init(store: BatchStore) {
             self.store = store
         }
 
+        func reset() {
+            dispatches.removeAll()
+            nextAction = nil
+        }
+
         override func send(_ action: consuming ActionType) {
-            store?._defaultDispatch(action: action)
+            fatalError("RecordingMiddlewareRuntime.send should not be used")
         }
 
         override func dispatch(_ action: consuming ActionType) {
-            store?.dispatchTyped(action, concurrent: false)
+            if isInAdapterCall {
+                dispatches.append(action)
+            } else {
+                pushRunActionAndRunEngineLoop?(action)
+            }
         }
 
         override func next(_ action: consuming ActionType) {
-            send(action)
+            nextAction = action
         }
 
         override func getState() -> State? {
@@ -48,38 +75,13 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         }
     }
 
-    private final class StageMiddlewareRuntime: MiddlewareRuntime<State, ActionType>, @unchecked Sendable {
-        weak var store: BatchStore?
-        let middleware: Middleware<State, ActionType>
-        let nextRuntime: MiddlewareRuntime<State, ActionType>
-        lazy var context = MiddlewareContext(runtime: self)
-
-        init(
-            store: BatchStore,
-            middleware: @escaping Middleware<State, ActionType>,
-            nextRuntime: MiddlewareRuntime<State, ActionType>
-        ) {
-            self.store = store
-            self.middleware = middleware
-            self.nextRuntime = nextRuntime
+    private lazy var recordingRuntime: RecordingMiddlewareRuntime = {
+        let r = RecordingMiddlewareRuntime(store: self)
+        r.pushRunActionAndRunEngineLoop = { [weak self] action in
+            self?.pushRunActionAndRunEngineLoop(action)
         }
-
-        override func send(_ action: consuming ActionType) {
-            middleware(action, context)
-        }
-
-        override func dispatch(_ action: consuming ActionType) {
-            store?.dispatchTyped(action, concurrent: false)
-        }
-
-        override func next(_ action: consuming ActionType) {
-            nextRuntime.send(action)
-        }
-
-        override func getState() -> State? {
-            store?.state
-        }
-    }
+        return r
+    }()
 
     private struct UnsafeTransfer<Value>: @unchecked Sendable {
         let value: Value
@@ -110,7 +112,9 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     }
 
     private let reducer: Reducer<State, ActionType>
-    private var compiledMiddleware: MiddlewareRuntime<State, ActionType>! = nil
+
+    private var frameStack: ContiguousArray<Frame> = []
+    private(set) var isEngineLoopRunning = false
 
     private(set) public var state: State!
 
@@ -164,24 +168,14 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         self.subscriptionsAutomaticallySkipRepeats = automaticallySkipsRepeats
         self.batchingWindow = batchingWindow
         self._batchingWindow = batchingWindow
-        self.compiledMiddleware = createMiddlewareRuntime()
+        recordingRuntime.pushRunActionAndRunEngineLoop = { [weak self] action in
+            self?.pushRunActionAndRunEngineLoop(action)
+        }
     }
 
     @inlinable
     public func withState<Result>(_ body: (State?) throws -> Result) rethrows -> Result {
         try body(state)
-    }
-
-    private func createMiddlewareRuntime() -> MiddlewareRuntime<State, ActionType> {
-        var nextRuntime: MiddlewareRuntime<State, ActionType> = TerminalMiddlewareRuntime(store: self)
-        for middleware in middleware.reversed() {
-            nextRuntime = StageMiddlewareRuntime(
-                store: self,
-                middleware: middleware,
-                nextRuntime: nextRuntime
-            )
-        }
-        return nextRuntime
     }
 
     private func createDispatchFunction() -> DispatchFunction {
@@ -402,7 +396,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         action as? ActionType
     }
 
-    public func _defaultDispatch(action: ActionType) {
+    private func pushRunActionAndRunEngineLoop(_ action: ActionType) {
         isDispatchingLock.lock()
         guard !isDispatching else {
             isDispatchingLock.unlock()
@@ -413,32 +407,126 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                 " (e.g. from multiple threads). Action: \(actionDescription(action))"
             )
         }
-        isDispatching = true
         isDispatchingLock.unlock()
+        frameStack.append(.runAction(action))
+        runEngineLoop()
+    }
 
-        let oldState = state
-        reducer(action, &state)
+    private func runEngineLoop() {
+        guard !isEngineLoopRunning else { return }
+        isEngineLoopRunning = true
+        defer { isEngineLoopRunning = false }
 
-        isDispatchingLock.lock()
-        isDispatching = false
-        isDispatchingLock.unlock()
+        while let frame = frameStack.popLast() {
+            switch frame {
+            case .runAction(let action):
+                if middleware.isEmpty {
+                    frameStack.append(.reduce(action))
+                } else {
+                    frameStack.append(.resumeMiddleware(action: action, index: 0))
+                }
 
-        guard let newState = state else { return }
-        if isSuppressingNotifications {
-            if !hasSuppressedNotification {
-                suppressedOldState = oldState
-                hasSuppressedNotification = true
+            case .resumeMiddleware(let action, let index):
+                if index == middleware.count {
+                    frameStack.append(.reduce(action))
+                    continue
+                }
+                applyAdapterResult(at: index, action: action)
+
+            case .reduce(let action):
+                isDispatchingLock.lock()
+                guard !isDispatching else {
+                    isDispatchingLock.unlock()
+                    raiseFatalError(
+                        "ReSwift:ConcurrentMutationError- Action has been dispatched while" +
+                        " a previous action is being processed. A reducer" +
+                        " is dispatching an action, or ReSwift is used in a concurrent context" +
+                        " (e.g. from multiple threads). Action: \(actionDescription(action))"
+                    )
+                }
+                isDispatching = true
+                isDispatchingLock.unlock()
+
+                let oldState = state
+                reducer(action, &state)
+
+                isDispatchingLock.lock()
+                isDispatching = false
+                isDispatchingLock.unlock()
+
+                guard let newState = state else { continue }
+                if isSuppressingNotifications {
+                    if !hasSuppressedNotification {
+                        suppressedOldState = oldState
+                        hasSuppressedNotification = true
+                    }
+                    continue
+                }
+                let snapshot = subscriptionSnapshot()
+                if snapshot.isEmpty { continue }
+
+                let shouldRunConcurrently = !isRunningInGroup && currentNotificationConcurrent
+                if shouldRunConcurrently {
+                    notifySubscriptionsConcurrent(snapshot, oldState: oldState, newState: newState)
+                } else {
+                    frameStack.append(.notifySubscribers(
+                        startIndex: 0,
+                        snapshot: snapshot,
+                        oldState: oldState,
+                        newState: newState
+                    ))
+                }
+
+            case .notifySubscribers(let startIndex, let snapshot, let oldState, let newState):
+                if startIndex >= snapshot.count {
+                    var idsToRemove: [Int] = []
+                    for record in snapshot where record.box.subscriber == nil {
+                        idsToRemove.append(record.id)
+                    }
+                    removeSubscriptions(withIDs: idsToRemove)
+                    continue
+                }
+                frameStack.append(.notifySubscribers(
+                    startIndex: startIndex + 1,
+                    snapshot: snapshot,
+                    oldState: oldState,
+                    newState: newState
+                ))
+                let record = snapshot[startIndex]
+                if record.box.subscriber != nil {
+                    record.box.newValues(oldState: oldState, newState: newState)
+                }
             }
-            return
         }
-        let snapshot = subscriptionSnapshot()
-        guard !snapshot.isEmpty else { return }
-        notifySubscriptions(
-            snapshot: snapshot,
-            oldState: oldState,
-            newState: newState,
-            concurrent: currentNotificationConcurrent
-        )
+    }
+
+    private func applyAdapterResult(at index: Int, action: ActionType) {
+        recordingRuntime.reset()
+        recordingRuntime.isInAdapterCall = true
+        defer { recordingRuntime.isInAdapterCall = false }
+
+        let context = MiddlewareContext(runtime: recordingRuntime)
+        middleware[index](action, context)
+
+        let dispatches = recordingRuntime.dispatches
+        let nextAction = recordingRuntime.nextAction
+
+        if let next = nextAction {
+            if dispatches.isEmpty {
+                frameStack.append(.resumeMiddleware(action: next, index: index + 1))
+            } else {
+                frameStack.append(.resumeMiddleware(action: next, index: index + 1))
+                for d in dispatches.reversed() {
+                    frameStack.append(.runAction(d))
+                }
+            }
+        } else {
+            if !dispatches.isEmpty {
+                for d in dispatches.reversed() {
+                    frameStack.append(.runAction(d))
+                }
+            }
+        }
     }
 
     @inline(__always)
@@ -446,7 +534,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         guard state != nil else { return }
         let previousConcurrent = currentNotificationConcurrent
         currentNotificationConcurrent = concurrent
-        compiledMiddleware.send(action)
+        pushRunActionAndRunEngineLoop(action)
         currentNotificationConcurrent = previousConcurrent
     }
 
@@ -566,7 +654,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                     self.suppressedOldState = nil
                     self.hasSuppressedNotification = false
                     for action in self._batchedActions {
-                        self.compiledMiddleware.send(action)
+                        self.pushRunActionAndRunEngineLoop(action)
                     }
                     self.isSuppressingNotifications = false
                     self.currentNotificationConcurrent = previousConcurrent
