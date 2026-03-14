@@ -4,6 +4,7 @@ import XCTest
 final class BatchStoreBenchmarks: XCTestCase {
     private let actionCount = 10_000
     private let reducerCount = 128
+    private let veryHighReducerCount = 512
     private let subscriberCount = 3_000
 
     func testBenchmarkManyActions() {
@@ -30,6 +31,36 @@ final class BatchStoreBenchmarks: XCTestCase {
             }
 
             XCTAssertEqual(store.state.sections.count, reducerCount)
+        }
+    }
+
+    func testBenchmarkVeryManyReducers() {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
+            let store = Store(
+                reducer: makeCompositeReducer(reducerCount: veryHighReducerCount),
+                state: BenchmarkState.reducerHeavy(count: veryHighReducerCount)
+            )
+
+            for seed in 0..<500 {
+                store.dispatch(BenchmarkReducerAction(seed: seed))
+            }
+
+            XCTAssertEqual(store.state.sections.count, veryHighReducerCount)
+        }
+    }
+
+    func testBenchmarkManyActionsThroughManyReducers() {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
+            let store = Store(
+                reducer: makeCompositeReducer(reducerCount: reducerCount),
+                state: BenchmarkState.reducerHeavy(count: reducerCount)
+            )
+
+            for seed in 0..<actionCount {
+                store.dispatch(BenchmarkReducerAction(seed: seed))
+            }
+
+            XCTAssertGreaterThan(store.state.checksum, 0)
         }
     }
 
@@ -96,6 +127,28 @@ final class BatchStoreBenchmarks: XCTestCase {
 
         withExtendedLifetime(subscribers) {}
     }
+
+    func testBenchmarkManyReducersAndManySelectedSubscribers() {
+        let store = Store(
+            reducer: makeSelectFriendlyCompositeReducer(reducerCount: reducerCount),
+            state: BenchmarkSubscriberState.reducerHeavy(count: reducerCount),
+            automaticallySkipsRepeats: false
+        )
+        let subscribers = makeProjectedReducerSubscribers(count: subscriberCount)
+        subscribers.forEach { subscriber in
+            store.subscribe(subscriber) {
+                $0.select(\BenchmarkSubscriberState.headlineValue)
+            }
+        }
+
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
+            for seed in 0..<250 {
+                store.dispatch(BenchmarkSubscriberAction(seed: seed), concurrent: false)
+            }
+        }
+
+        withExtendedLifetime(subscribers) {}
+    }
 }
 
 private struct BenchmarkState: Equatable {
@@ -108,6 +161,22 @@ private struct BenchmarkState: Equatable {
 }
 
 private struct BenchmarkReducerAction: Action {
+    let seed: Int
+}
+
+private struct BenchmarkSubscriberState: Equatable {
+    var sections: [Int]
+
+    var headlineValue: Int? {
+        sections.first
+    }
+
+    static func reducerHeavy(count: Int) -> Self {
+        Self(sections: Array(repeating: 0, count: count))
+    }
+}
+
+private struct BenchmarkSubscriberAction: Action {
     let seed: Int
 }
 
@@ -127,6 +196,21 @@ private func makeCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkState> 
     }
 }
 
+private func makeSelectFriendlyCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkSubscriberState> {
+    let reducers: [Reducer<BenchmarkSubscriberState>] = (0..<reducerCount).map { index in
+        { action, state in
+            guard let action = action as? BenchmarkSubscriberAction else { return }
+            state.sections[index] = (state.sections[index] + action.seed + index) % 10_000
+        }
+    }
+
+    return { action, state in
+        for reducer in reducers {
+            reducer(action, &state)
+        }
+    }
+}
+
 private final class BenchmarkProjectedSubscriber: StoreSubscriber {
     typealias StoreSubscriberStateType = Int?
 
@@ -135,4 +219,14 @@ private final class BenchmarkProjectedSubscriber: StoreSubscriber {
 
 private func makeProjectedSubscribers(count: Int) -> [BenchmarkProjectedSubscriber] {
     (0..<count).map { _ in BenchmarkProjectedSubscriber() }
+}
+
+private final class BenchmarkReducerProjectedSubscriber: StoreSubscriber {
+    typealias StoreSubscriberStateType = Int?
+
+    func newState(state: Int?) {}
+}
+
+private func makeProjectedReducerSubscribers(count: Int) -> [BenchmarkReducerProjectedSubscriber] {
+    (0..<count).map { _ in BenchmarkReducerProjectedSubscriber() }
 }

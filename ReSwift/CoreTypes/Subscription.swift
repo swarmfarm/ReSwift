@@ -15,30 +15,12 @@
 /// The box subscribes either to the original subscription, or if available to the transformed
 /// subscription and passes any values that come through this subscriptions to the subscriber.
 import Foundation
-class SubscriptionBox<State>: Hashable {
+class SubscriptionBox<State> {
 
     private let originalSubscription: Subscription<State>
     weak var subscriber: AnyStoreSubscriber?
-    let id: UUID
-    #if swift(>=5.0)
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-        }
-    #elseif swift(>=4.2)
-        #if compiler(>=5.0)
-            func hash(into hasher: inout Hasher) {
-                hasher.combine(self.objectIdentifier)
-            }
-        #else
-            var hashValue: Int {
-                return self.objectIdentifier.hashValue
-            }
-        #endif
-    #else
-        var hashValue: Int {
-            return self.objectIdentifier.hashValue
-        }
-    #endif
+    private let forward: (State?, State) -> Void
+    let requiresOldState: Bool
 
     init<T>(
         originalSubscription: Subscription<State>,
@@ -47,32 +29,30 @@ class SubscriptionBox<State>: Hashable {
     ) {
         self.originalSubscription = originalSubscription
         self.subscriber = subscriber
-        self.id = UUID()
 
         // If we received a transformed subscription, we subscribe to that subscription
         // and forward all new values to the subscriber.
         if let transformedSubscription = transformedSubscription {
-            transformedSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
+            self.requiresOldState = originalSubscription.requiresOldState
+            transformedSubscription.observer = { [weak subscriber] _, newState in
+                subscriber?._newState(state: newState as Any)
+            }
+            self.forward = { [originalSubscription] oldState, newState in
+                originalSubscription.newValues(oldState: oldState, newState: newState)
             }
         // If we haven't received a transformed subscription, we forward all values
         // from the original subscription.
         } else {
-            originalSubscription.observer = { [unowned self] _, newState in
-                self.subscriber?._newState(state: newState as Any)
+            self.requiresOldState = originalSubscription.requiresOldState
+            self.forward = { [weak subscriber] _, newState in
+                subscriber?._newState(state: newState as Any)
             }
         }
     }
 
-    func newValues(oldState: State, newState: State) {
-        // We pass all new values through the original subscription, which accepts
-        // values of type `<State>`. If present, transformed subscriptions will
-        // receive this update and transform it before passing it on to the subscriber.
-        self.originalSubscription.newValues(oldState: oldState, newState: newState)
-    }
-
-    static func == (left: SubscriptionBox<State>, right: SubscriptionBox<State>) -> Bool {
-        return left.id == right.id
+    @inline(__always)
+    func newValues(oldState: State?, newState: State) {
+        forward(oldState, newState)
     }
 }
 
@@ -83,16 +63,23 @@ extension SubscriptionBox: @unchecked Sendable {}
 /// The subscription acts as a very-light weight signal/observable that you might know from
 /// reactive programming libraries.
 public class Subscription<State> {
+    private var requiresOldStateMarker: (() -> Void)?
+    fileprivate var requiresOldState = false
 
     private  func _select<Substate>(
         _ selector: @escaping (borrowing  State) -> Substate
         ) -> Subscription<Substate>
     {
-        return Subscription<Substate> { sink in
+        let subscription = Subscription<Substate> { sink in
             self.observer = { oldState, newState in
-                sink(oldState.map(selector) ?? nil, selector(newState))
+                let projectedOldState = self.requiresOldState ? oldState.map(selector) ?? nil : nil
+                sink(projectedOldState, selector(newState))
             }
         }
+        subscription.requiresOldStateMarker = { [weak self] in
+            self?.markRequiresOldState()
+        }
+        return subscription
     }
 
     // MARK: Public Interface
@@ -132,6 +119,7 @@ public class Subscription<State> {
     /// - parameter newState: The store's new state, after the action has been reduced.
     public func skipRepeats(_ isRepeat: @escaping (_ oldState: State, _ newState: State) -> Bool)
         -> Subscription<State> {
+        markRequiresOldState()
         return Subscription<State> { sink in
             self.observer = { oldState, newState in
                 switch (oldState, newState) {
@@ -155,6 +143,12 @@ public class Subscription<State> {
     // MARK: Internals
 
     init() {}
+
+    private func markRequiresOldState() {
+        guard !requiresOldState else { return }
+        requiresOldState = true
+        requiresOldStateMarker?()
+    }
 
     /// Sends new values over this subscription. Observers will be notified of these new values.
     func newValues(oldState: State?, newState: State) {

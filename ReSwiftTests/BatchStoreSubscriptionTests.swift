@@ -95,6 +95,26 @@ final class BatchStoreSubscriptionTests: XCTestCase {
         XCTAssertEqual(store.state.testValue, 5)
     }
 
+    func testSubscriberCanUnsubscribeItselfDuringNotification() {
+        let store = Store(reducer: appReducer, state: TestAppState())
+        var subscriber: ClosureSubscriber<TestAppState>?
+        var receivedValues: [Int?] = []
+
+        subscriber = ClosureSubscriber<TestAppState> { state in
+            receivedValues.append(state.testValue)
+            if state.testValue == 1, let subscriber {
+                store.unsubscribe(subscriber)
+            }
+        }
+
+        store.subscribe(subscriber!)
+        store.dispatch(SetValueAction(value: 1))
+        store.dispatch(SetValueAction(value: 2))
+
+        XCTAssertEqual(receivedValues, [nil, 1])
+        XCTAssertEqual(store.subscriptions.count, 0)
+    }
+
     func testClosureSelectionForwardsProjectedState() {
         let store = Store(reducer: appReducer, state: TestAppState())
         let subscriber = RecordingSubscriber<Int?>()
