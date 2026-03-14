@@ -43,10 +43,12 @@ The common call sites are intentionally the same. What changed is the shape of `
 ## Breaking API Changes
 
 - `BatchStore` is now `final`.
+- Middleware is fixed at initialization time. Reassigning `store.middleware` is no longer supported.
 - `MiddlewareContext.dispatch`, `MiddlewareContext.next`, and `MiddlewareContext.getState` are methods now, not stored closure properties.
 - `MiddlewareContext` is no longer intended to be manually initialized by library users.
 - Code that captured `context.dispatch`, `context.next`, or `context.getState` as standalone function values must now capture `context` and call the method later.
 - `BatchedKeyedAction` was removed. `dispatchBatched` now preserves insertion order for all batched actions and no longer coalesces by key.
+- Deprecated action-creator APIs are no longer part of `StoreType`.
 
 Before:
 
@@ -79,4 +81,5 @@ This means typed stores no longer have to go through the existential `any Action
 - Keep using `context.getState()` for middleware state reads.
 - Prefer typed dispatch overloads when working with `BatchStore<State, ActionType>` directly.
 - Remove any `BatchStore` subclasses and use composition instead.
+- Stop mutating `store.middleware` after initialization.
 - Replace any `BatchedKeyedAction` conformances with plain `Action` types.

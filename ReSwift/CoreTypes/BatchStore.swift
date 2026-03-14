@@ -86,19 +86,23 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     }
 
     private final class RemovalBuffer: @unchecked Sendable {
-        private let lock = NSLock()
-        private var ids: [Int] = []
+        private let lock = UnfairLock()
+        private var ids: ContiguousArray<Int> = []
 
         func append(_ id: Int) {
-            lock.lock()
-            ids.append(id)
-            lock.unlock()
+            lock.withLock {
+                ids.append(id)
+            }
+        }
+
+        func append(contentsOf newIDs: some Sequence<Int>) {
+            lock.withLock {
+                ids.append(contentsOf: newIDs)
+            }
         }
 
         func snapshot() -> [Int] {
-            lock.lock()
-            defer { lock.unlock() }
-            return ids
+            lock.withLock { Array(ids) }
         }
     }
 
@@ -124,17 +128,15 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
     public private(set) lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
-    private var subscriptionsLock = NSLock()
-    private var _subscriptions: [SubscriptionRecord] = []
+    private let subscriptionsLock = UnfairLock()
+    private var _subscriptions: ContiguousArray<SubscriptionRecord> = []
     private var nextSubscriptionID = 0
-    private var subscriptionsRequiringOldState = 0
+    private let concurrentNotificationChunkCount = max(1, ProcessInfo.processInfo.activeProcessorCount)
     var subscriptions: [SubscriptionType] {
-        subscriptionsLock.lock()
-        defer { subscriptionsLock.unlock() }
-        return _subscriptions.map(\.box)
+        subscriptionsLock.withLock { _subscriptions.map(\.box) }
     }
 
-    private let isDispatchingLock = NSLock()
+    private let isDispatchingLock = UnfairLock()
     private var isDispatching = false
 
     fileprivate let subscriptionsAutomaticallySkipRepeats: Bool
@@ -190,15 +192,12 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
             subscriber: subscriber
         )
 
-        subscriptionsLock.lock()
-        _subscriptions.append(SubscriptionRecord(id: nextSubscriptionID, box: subscriptionBox))
-        if subscriptionBox.requiresOldState {
-            subscriptionsRequiringOldState += 1
+        subscriptionsLock.withLock {
+            _subscriptions.append(SubscriptionRecord(id: nextSubscriptionID, box: subscriptionBox))
+            nextSubscriptionID &+= 1
         }
-        nextSubscriptionID &+= 1
-        subscriptionsLock.unlock()
 
-        originalSubscription.newValues(oldState: nil, newState: state)
+        originalSubscription.newValues(newState: state)
     }
 
     public func subscribe<S: StoreSubscriber>(_ subscriber: S)
@@ -210,14 +209,17 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         _ subscriber: S,
         transform: ((Subscription<State>) -> Subscription<SelectedState>)?
     ) where S.StoreSubscriberStateType == SelectedState {
-        let originalSubscription = Subscription<State>()
-        let transformedSubscription = transform?(originalSubscription)
+        runSync { [weak self] in
+            guard let self else { return }
+            let originalSubscription = Subscription<State>()
+            let transformedSubscription = transform?(originalSubscription)
 
-        _subscribe(
-            subscriber,
-            originalSubscription: originalSubscription,
-            transformedSubscription: transformedSubscription
-        )
+            self._subscribe(
+                subscriber,
+                originalSubscription: originalSubscription,
+                transformedSubscription: transformedSubscription
+            )
+        }
     }
 
     func subscriptionBox<S: StoreSubscriber>(
@@ -225,10 +227,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         transformedSubscription: Subscription<State>?,
         subscriber: S
     ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == State {
-        DirectSubscriptionBox(
-            originalSubscription: originalSubscription,
-            subscriber: subscriber
-        )
+        DirectSubscriptionBox(subscriber: subscriber)
     }
 
     func subscriptionBox<T, S: StoreSubscriber>(
@@ -258,48 +257,47 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     }
 
     private func removeFirstSubscription(for subscriber: AnyStoreSubscriber) {
-        subscriptionsLock.lock()
-        defer { subscriptionsLock.unlock() }
-
-        if let index = _subscriptions.firstIndex(where: { $0.box.subscriber === subscriber }) {
-            if _subscriptions[index].box.requiresOldState {
-                subscriptionsRequiringOldState &-= 1
+        subscriptionsLock.withLock {
+            if let index = _subscriptions.firstIndex(where: { $0.box.subscriber === subscriber }) {
+                _subscriptions[index].box.subscriber = nil
+                _subscriptions.remove(at: index)
             }
-            _subscriptions[index].box.subscriber = nil
-            _subscriptions.remove(at: index)
         }
     }
 
     private func removeSubscriptions(withIDs ids: [Int]) {
         guard !ids.isEmpty else { return }
-
-        let idSet = Set(ids)
-        subscriptionsLock.lock()
-        _subscriptions.removeAll { record in
-            if idSet.contains(record.id) {
-                if record.box.requiresOldState {
-                    subscriptionsRequiringOldState &-= 1
+        subscriptionsLock.withLock {
+            switch ids.count {
+            case 1:
+                let target = ids[0]
+                _subscriptions.removeAll { record in
+                    guard record.id == target else { return false }
+                    record.box.subscriber = nil
+                    return true
                 }
-                record.box.subscriber = nil
-                return true
+            default:
+                let idSet = Set(ids)
+                _subscriptions.removeAll { record in
+                    guard idSet.contains(record.id) else { return false }
+                    record.box.subscriber = nil
+                    return true
+                }
             }
-            return false
         }
-        subscriptionsLock.unlock()
     }
 
-    private func subscriptionSnapshot() -> [SubscriptionRecord] {
-        subscriptionsLock.lock()
-        defer { subscriptionsLock.unlock() }
-        return _subscriptions
+    @inline(__always)
+    private func subscriptionSnapshot() -> ContiguousArray<SubscriptionRecord> {
+        subscriptionsLock.withLock { _subscriptions }
     }
 
+    @inline(__always)
     private func notifySubscriptionsSequential(
-        _ snapshot: [SubscriptionRecord],
-        previousState: State?,
+        _ snapshot: ContiguousArray<SubscriptionRecord>,
         nextState: State
     ) {
-        var subscriptionsToRemove: [Int] = []
+        var subscriptionsToRemove: ContiguousArray<Int> = []
         subscriptionsToRemove.reserveCapacity(snapshot.count / 8)
 
         for record in snapshot {
@@ -307,40 +305,48 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                 subscriptionsToRemove.append(record.id)
                 continue
             }
-            record.box.newValues(oldState: previousState, newState: nextState)
+            record.box.newValues(newState: nextState)
         }
 
-        removeSubscriptions(withIDs: subscriptionsToRemove)
+        removeSubscriptions(withIDs: Array(subscriptionsToRemove))
     }
 
     private func notifySubscriptionsConcurrent(
-        _ snapshot: [SubscriptionRecord],
-        previousState: State?,
+        _ snapshot: ContiguousArray<SubscriptionRecord>,
         nextState: State
     ) {
-        let previousState = UnsafeTransfer(value: previousState)
         let nextState = UnsafeTransfer(value: nextState)
         let subscriptionsToRemove = RemovalBuffer()
+        let chunkCount = min(concurrentNotificationChunkCount, snapshot.count)
 
         isRunningInGroup = true
         defer { isRunningInGroup = false }
 
-        for record in snapshot {
-            if record.box.subscriber == nil {
-                subscriptionsToRemove.append(record.id)
-                continue
-            }
+        let chunkSize = (snapshot.count + chunkCount - 1) / chunkCount
+        for chunkIndex in 0..<chunkCount {
+            let start = chunkIndex * chunkSize
+            let end = min(start + chunkSize, snapshot.count)
+            guard start < end else { break }
 
             group.enter()
-            concurrentQueue.async { [record, previousState, nextState, subscriptionsToRemove] in
+            concurrentQueue.async { [snapshot, nextState, subscriptionsToRemove] in
                 defer { self.group.leave() }
+                var localRemovals: ContiguousArray<Int> = []
+                localRemovals.reserveCapacity((end - start) / 8)
 
-                guard record.box.subscriber != nil else {
-                    subscriptionsToRemove.append(record.id)
-                    return
+                for index in start..<end {
+                    let record = snapshot[index]
+                    guard record.box.subscriber != nil else {
+                        localRemovals.append(record.id)
+                        continue
+                    }
+
+                    record.box.newValues(newState: nextState.value)
                 }
 
-                record.box.newValues(oldState: previousState.value, newState: nextState.value)
+                if !localRemovals.isEmpty {
+                    subscriptionsToRemove.append(contentsOf: localRemovals)
+                }
             }
         }
 
@@ -348,24 +354,18 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         removeSubscriptions(withIDs: subscriptionsToRemove.snapshot())
     }
 
-    private func shouldCapturePreviousState() -> Bool {
-        subscriptionsLock.lock()
-        defer { subscriptionsLock.unlock() }
-        return subscriptionsRequiringOldState > 0
-    }
-
+    @inline(__always)
     private func notifySubscriptions(
-        snapshot: [SubscriptionRecord],
-        previousState: State?,
+        snapshot: ContiguousArray<SubscriptionRecord>,
         concurrent: Bool = false
     ) {
         let nextState = self.state!
         let shouldRunConcurrently = !isRunningInGroup && concurrent
 
         if shouldRunConcurrently {
-            notifySubscriptionsConcurrent(snapshot, previousState: previousState, nextState: nextState)
+            notifySubscriptionsConcurrent(snapshot, nextState: nextState)
         } else {
-            notifySubscriptionsSequential(snapshot, previousState: previousState, nextState: nextState)
+            notifySubscriptionsSequential(snapshot, nextState: nextState)
         }
     }
 
@@ -399,6 +399,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         isDispatchingLock.unlock()
     }
 
+    @inline(__always)
     private func dispatchTyped(_ action: consuming ActionType, concurrent: Bool = false) {
         guard state != nil else { return }
 
@@ -408,9 +409,8 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
             return
         }
 
-        let currentState = shouldCapturePreviousState() ? state! : nil
         compiledMiddleware.send(action)
-        notifySubscriptions(snapshot: snapshot, previousState: currentState, concurrent: concurrent)
+        notifySubscriptions(snapshot: snapshot, concurrent: concurrent)
     }
 
     public func dispatch(_ action: any Action, concurrent: Bool = false) {
@@ -521,7 +521,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                 _isBatching = true
                 batchingQueue.asyncAfter(deadline: .now() + batchingWindow) { [weak self] in
                     guard let self else { return }
-                    guard let currentState = self.state else { return }
+                    guard self.state != nil else { return }
 
                     for action in self._batchedActions {
                         self.compiledMiddleware.send(action)
@@ -529,8 +529,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                     self._batchedActions = []
 
                     let snapshot = self.subscriptionSnapshot()
-                    let previousState = self.shouldCapturePreviousState() ? currentState : nil
-                    self.notifySubscriptions(snapshot: snapshot, previousState: previousState)
+                    self.notifySubscriptions(snapshot: snapshot)
                     self._isBatching = false
                 }
             }
