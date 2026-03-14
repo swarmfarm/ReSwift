@@ -180,7 +180,7 @@ open class BatchStore<State>: StoreType {
             subscriber: subscriber
         )
     }
-    #if DEBUG
+    #if DEBUG && false
     let log = OSLog(subsystem: "com.reswift", category: "notify")
     #endif
     open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
@@ -216,7 +216,7 @@ open class BatchStore<State>: StoreType {
                 subscriptionsToRemove.append(subscription)
             }
             else {
-                #if DEBUG
+                #if DEBUG && false
                 let signpostID = OSSignpostID(log: log)
                 let subscriberTypeName =  subscription.subscriber?.idKey ?? "none"
                
@@ -232,7 +232,7 @@ open class BatchStore<State>: StoreType {
                             return
                         }
                         if subscription.subscriber != nil {
-                            #if DEBUG
+                            #if DEBUG && false
                             let log = OSLog(subsystem: "com.reswift", category: "notify.concurrent")
                             os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                             defer {
@@ -245,7 +245,7 @@ open class BatchStore<State>: StoreType {
                         
                     }
                 } else {
-                    #if DEBUG
+                    #if DEBUG && false
                     os_signpost(.begin, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
                     defer {
                         os_signpost(.end, log: log, name: "subscription.newValues", signpostID: signpostID, "%{public}s", subscriberTypeName)
@@ -455,7 +455,7 @@ extension BatchStore {
         _ subscriber: S, transform: ((Subscription<State>) -> Subscription<SelectedState>)?
         ) where S.StoreSubscriberStateType == SelectedState
     {
-        #if DEBUG
+        #if DEBUG && false
         let subscriberTypeName = String(describing: type(of: subscriber))
             
         // Start the signpost interval
@@ -476,7 +476,7 @@ extension BatchStore {
         }
         
         // End the signpost interval
-#if DEBUG
+#if DEBUG && false
         os_signpost(.end, log: log, name: "Subscribe", signpostID: signpostID, "%{public}s", subscriberTypeName)
 #endif
     }
