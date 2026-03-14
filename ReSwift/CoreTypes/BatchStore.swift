@@ -128,6 +128,9 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     private var _batchingWindow: TimeInterval? = nil
     private var _isBatching = false
     private var _batchedActions: ContiguousArray<ActionType> = []
+    private var isSuppressingNotifications = false
+    private var suppressedOldState: State?
+    private var hasSuppressedNotification = false
 
     public private(set) lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
@@ -143,6 +146,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
     private let isDispatchingLock = NSLock()
     private var isDispatching = false
+    private var currentNotificationConcurrent = false
 
     fileprivate let subscriptionsAutomaticallySkipRepeats: Bool
     public let middleware: [Middleware<State, ActionType>]
@@ -202,7 +206,9 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         nextSubscriptionID &+= 1
         subscriptionsLock.unlock()
 
-        originalSubscription.newValues(newState: state)
+        if let state {
+            originalSubscription.newValues(oldState: nil, newState: state)
+        }
     }
 
     public func subscribe<S: StoreSubscriber>(_ subscriber: S)
@@ -227,22 +233,14 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         }
     }
 
-    func subscriptionBox<S: StoreSubscriber>(
-        originalSubscription: Subscription<State>,
-        transformedSubscription: Subscription<State>?,
-        subscriber: S
-    ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == State {
-        DirectSubscriptionBox(subscriber: subscriber)
-    }
-
     func subscriptionBox<T, S: StoreSubscriber>(
         originalSubscription: Subscription<State>,
         transformedSubscription: Subscription<T>?,
         subscriber: S
     ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == T {
-        TransformedSubscriptionBox(
+        SubscriptionBox(
             originalSubscription: originalSubscription,
-            transformedSubscription: transformedSubscription!,
+            transformedSubscription: transformedSubscription,
             subscriber: subscriber
         )
     }
@@ -303,7 +301,8 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     @inline(__always)
     private func notifySubscriptionsSequential(
         _ snapshot: ContiguousArray<SubscriptionRecord>,
-        nextState: State
+        oldState: State?,
+        newState: State
     ) {
         var subscriptionsToRemove: ContiguousArray<Int> = []
         subscriptionsToRemove.reserveCapacity(snapshot.count / 8)
@@ -313,7 +312,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                 subscriptionsToRemove.append(record.id)
                 continue
             }
-            record.box.newValues(newState: nextState)
+            record.box.newValues(oldState: oldState, newState: newState)
         }
 
         removeSubscriptions(withIDs: Array(subscriptionsToRemove))
@@ -321,9 +320,11 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
     private func notifySubscriptionsConcurrent(
         _ snapshot: ContiguousArray<SubscriptionRecord>,
-        nextState: State
+        oldState: State?,
+        newState: State
     ) {
-        let nextState = UnsafeTransfer(value: nextState)
+        let oldState = UnsafeTransfer(value: oldState)
+        let newState = UnsafeTransfer(value: newState)
         let subscriptionsToRemove = RemovalBuffer()
 
         isRunningInGroup = true
@@ -336,7 +337,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
             }
 
             group.enter()
-            concurrentQueue.async { [record, nextState, subscriptionsToRemove] in
+            concurrentQueue.async { [record, oldState, newState, subscriptionsToRemove] in
                 defer { self.group.leave() }
 
                 guard record.box.subscriber != nil else {
@@ -344,7 +345,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                     return
                 }
 
-                record.box.newValues(newState: nextState.value)
+                record.box.newValues(oldState: oldState.value, newState: newState.value)
             }
         }
 
@@ -355,15 +356,16 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     @inline(__always)
     private func notifySubscriptions(
         snapshot: ContiguousArray<SubscriptionRecord>,
+        oldState: State?,
+        newState: State,
         concurrent: Bool = false
     ) {
-        let nextState = self.state!
         let shouldRunConcurrently = !isRunningInGroup && concurrent
 
         if shouldRunConcurrently {
-            notifySubscriptionsConcurrent(snapshot, nextState: nextState)
+            notifySubscriptionsConcurrent(snapshot, oldState: oldState, newState: newState)
         } else {
-            notifySubscriptionsSequential(snapshot, nextState: nextState)
+            notifySubscriptionsSequential(snapshot, oldState: oldState, newState: newState)
         }
     }
 
@@ -390,25 +392,38 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         isDispatching = true
         isDispatchingLock.unlock()
 
+        let oldState = state
         reducer(action, &state)
 
         isDispatchingLock.lock()
         isDispatching = false
         isDispatchingLock.unlock()
+
+        guard let newState = state else { return }
+        if isSuppressingNotifications {
+            if !hasSuppressedNotification {
+                suppressedOldState = oldState
+                hasSuppressedNotification = true
+            }
+            return
+        }
+        let snapshot = subscriptionSnapshot()
+        guard !snapshot.isEmpty else { return }
+        notifySubscriptions(
+            snapshot: snapshot,
+            oldState: oldState,
+            newState: newState,
+            concurrent: currentNotificationConcurrent
+        )
     }
 
     @inline(__always)
     private func dispatchTyped(_ action: consuming ActionType, concurrent: Bool = false) {
         guard state != nil else { return }
-
-        let snapshot = subscriptionSnapshot()
-        guard !snapshot.isEmpty else {
-            compiledMiddleware.send(action)
-            return
-        }
-
+        let previousConcurrent = currentNotificationConcurrent
+        currentNotificationConcurrent = concurrent
         compiledMiddleware.send(action)
-        notifySubscriptions(snapshot: snapshot, concurrent: concurrent)
+        currentNotificationConcurrent = previousConcurrent
     }
 
     public func dispatch(_ action: any Action, concurrent: Bool = false) {
@@ -521,13 +536,30 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
                     guard let self else { return }
                     guard self.state != nil else { return }
 
+                    let previousConcurrent = self.currentNotificationConcurrent
+                    self.currentNotificationConcurrent = false
+                    self.isSuppressingNotifications = true
+                    self.suppressedOldState = nil
+                    self.hasSuppressedNotification = false
                     for action in self._batchedActions {
                         self.compiledMiddleware.send(action)
                     }
+                    self.isSuppressingNotifications = false
+                    self.currentNotificationConcurrent = previousConcurrent
                     self._batchedActions = []
-
-                    let snapshot = self.subscriptionSnapshot()
-                    self.notifySubscriptions(snapshot: snapshot)
+                    if self.hasSuppressedNotification, let newState = self.state {
+                        let snapshot = self.subscriptionSnapshot()
+                        if !snapshot.isEmpty {
+                            self.notifySubscriptions(
+                                snapshot: snapshot,
+                                oldState: self.suppressedOldState,
+                                newState: newState,
+                                concurrent: false
+                            )
+                        }
+                    }
+                    self.suppressedOldState = nil
+                    self.hasSuppressedNotification = false
                     self._isBatching = false
                 }
             }
