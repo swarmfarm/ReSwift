@@ -1,212 +1,246 @@
-//
-//  TestFakes.swift
-//  ReSwift
-//
-//  Created by Benjamin Encz on 12/24/15.
-//  Copyright © 2015 ReSwift Community. All rights reserved.
-//
-
 import Foundation
-import ReSwift
+import XCTest
+@testable import ReSwift
 
-struct TestAppState {
+struct TestAppState: Equatable {
     var testValue: Int?
+    var label: String
+    var nested: NestedState
+    var log: [String]
 
-    init(testValue: Int? = nil) {
+    init(
+        testValue: Int? = nil,
+        label: String = "Initial",
+        nested: NestedState = NestedState(),
+        log: [String] = []
+    ) {
         self.testValue = testValue
+        self.label = label
+        self.nested = nested
+        self.log = log
     }
 }
 
-struct TestStringAppState {
-    var testValue: String
+struct NestedState: Equatable {
+    var value: Int
 
-    init() {
-        testValue = "Initial"
+    init(value: Int = 0) {
+        self.value = value
     }
 }
 
-extension TestStringAppState: Equatable {
-    static func == (lhs: TestStringAppState, rhs: TestStringAppState) -> Bool {
-        return lhs.testValue == rhs.testValue
+struct TestNonEquatableState {
+    var payload: NonEquatablePayload
+
+    init(payload: NonEquatablePayload = NonEquatablePayload()) {
+        self.payload = payload
     }
 }
 
-struct TestNonEquatable {
-    var testValue: NonEquatable
+struct NonEquatablePayload {
+    var value: String
 
-    init() {
-        testValue = NonEquatable()
-    }
-}
-
-struct NonEquatable {
-    var testValue: String
-
-    init() {
-        testValue = "Initial"
-    }
-}
-
-struct TestCustomAppState {
-    var substate: TestCustomSubstate
-
-    init(substate: TestCustomSubstate) {
-        self.substate = substate
-    }
-
-    init(substateValue value: Int = 0) {
-        self.substate = TestCustomSubstate(value: value)
-    }
-
-    struct TestCustomSubstate {
-        var value: Int
+    init(value: String = "Initial") {
+        self.value = value
     }
 }
 
 struct NoOpAction: Action {}
 
 struct SetValueAction: Action {
-
     let value: Int?
-    static let type = "SetValueAction"
-
-    init (_ value: Int?) {
-        self.value = value
-    }
 }
 
-struct SetValueStringAction: Action {
-
-    var value: String
-    static let type = "SetValueStringAction"
-
-    init (_ value: String) {
-        self.value = value
-    }
+struct IncrementAction: Action {
+    let amount: Int
 }
 
-struct SetCustomSubstateAction: Action {
+struct SetLabelAction: Action {
+    let value: String
+}
 
-    var value: Int
-    static let type = "SetCustomSubstateAction"
+struct SetNestedValueAction: Action {
+    let value: Int
+}
 
-    init (_ value: Int) {
-        self.value = value
-    }
+struct AppendLogAction: Action {
+    let value: String
 }
 
 struct SetNonEquatableAction: Action {
-    var value: NonEquatable
-    static let type = "SetNonEquatableAction"
+    let value: String
+}
 
-    init (_ value: NonEquatable) {
-        self.value = value
+struct KeyedValueAction: BatchedKeyedAction {
+    let batchKey: String
+    let value: Int?
+}
+
+func appReducer(action: Action, state: inout TestAppState) {
+    switch action {
+    case let action as SetValueAction:
+        state.testValue = action.value
+    case let action as IncrementAction:
+        state.testValue = (state.testValue ?? 0) + action.amount
+    case let action as SetLabelAction:
+        state.label = action.value
+    case let action as SetNestedValueAction:
+        state.nested.value = action.value
+    case let action as AppendLogAction:
+        state.log.append(action.value)
+    case let action as KeyedValueAction:
+        state.testValue = action.value
+    default:
+        break
     }
 }
 
-struct TestReducer {
-    func handleAction(action: Action, state: TestAppState?) -> TestAppState {
-        var state = state ?? TestAppState()
-
-        switch action {
-        case let action as SetValueAction:
-            state.testValue = action.value
-            return state
-        default:
-            return state
-        }
+func nonEquatableReducer(action: Action, state: inout TestNonEquatableState) {
+    switch action {
+    case let action as SetNonEquatableAction:
+        state.payload = NonEquatablePayload(value: action.value)
+    default:
+        break
     }
 }
 
-struct TestValueStringReducer {
-    func handleAction(action: Action, state: TestStringAppState?) -> TestStringAppState {
-        var state = state ?? TestStringAppState()
+final class RecordingSubscriber<State>: StoreSubscriber {
+    typealias StoreSubscriberStateType = State
 
-        switch action {
-        case let action as SetValueStringAction:
-            state.testValue = action.value
-            return state
-        default:
-            return state
-        }
-    }
-}
+    private(set) var receivedStates: [State] = []
 
-struct TestCustomAppStateReducer {
-    func handleAction(action: Action, state: TestCustomAppState?) -> TestCustomAppState {
-        var state = state ?? TestCustomAppState()
-
-        switch action {
-        case let action as SetCustomSubstateAction:
-            state.substate.value = action.value
-            return state
-        default:
-            return state
-        }
-    }
-}
-
-struct TestNonEquatableReducer {
-    func handleAction(action: Action, state: TestNonEquatable?) ->
-        TestNonEquatable {
-        var state = state ?? TestNonEquatable()
-
-        switch action {
-        case let action as SetNonEquatableAction:
-            state.testValue = action.value
-            return state
-        default:
-            return state
-        }
-    }
-}
-
-class TestStoreSubscriber<T>: StoreSubscriber {
-    var receivedStates: [T] = []
-
-    func newState(state: T) {
+    func newState(state: State) {
         receivedStates.append(state)
     }
 }
 
-class BlockSubscriber<S>: StoreSubscriber {
-    typealias StoreSubscriberStateType = S
-    private let block: (S) -> Void
+final class ClosureSubscriber<State>: StoreSubscriber {
+    typealias StoreSubscriberStateType = State
 
-    init(block: @escaping (S) -> Void) {
-        self.block = block
+    private let handler: (State) -> Void
+
+    init(handler: @escaping (State) -> Void) {
+        self.handler = handler
     }
 
-    func newState(state: S) {
-        self.block(state)
+    func newState(state: State) {
+        handler(state)
     }
 }
 
-class DispatchingSubscriber: StoreSubscriber {
-    var store: Store<TestAppState>
+final class WaitingSubscriber<State>: StoreSubscriber {
+    typealias StoreSubscriberStateType = State
+
+    private let started: XCTestExpectation
+    private let releaseSemaphore: DispatchSemaphore
+    private let lock = NSLock()
+    private var hasDeliveredInitialState = false
+
+    init(started: XCTestExpectation, releaseSemaphore: DispatchSemaphore) {
+        self.started = started
+        self.releaseSemaphore = releaseSemaphore
+    }
+
+    func newState(state: State) {
+        lock.lock()
+        let shouldBlock = hasDeliveredInitialState
+        hasDeliveredInitialState = true
+        lock.unlock()
+
+        guard shouldBlock else { return }
+        started.fulfill()
+        _ = releaseSemaphore.wait(timeout: .now() + 1.0)
+    }
+}
+
+final class QueueRecordingSubscriber<State>: StoreSubscriber {
+    typealias StoreSubscriberStateType = State
+
+    private let queueKey: DispatchSpecificKey<Int>
+    private let expectedValue: Int
+    private let expectation: XCTestExpectation
+    private let lock = NSLock()
+    private var didReceiveInitialState = false
+    private(set) var callbackSawExpectedQueue = false
+
+    init(
+        queueKey: DispatchSpecificKey<Int>,
+        expectedValue: Int,
+        expectation: XCTestExpectation
+    ) {
+        self.queueKey = queueKey
+        self.expectedValue = expectedValue
+        self.expectation = expectation
+    }
+
+    func newState(state: State) {
+        lock.lock()
+        let shouldEvaluate = didReceiveInitialState
+        didReceiveInitialState = true
+        lock.unlock()
+
+        guard shouldEvaluate else { return }
+        callbackSawExpectedQueue = DispatchQueue.getSpecific(key: queueKey) == expectedValue
+        expectation.fulfill()
+    }
+}
+
+final class DispatchingSubscriber: StoreSubscriber {
+    typealias StoreSubscriberStateType = TestAppState
+
+    private let store: Store<TestAppState>
+    private var hasDispatchedFollowUp = false
 
     init(store: Store<TestAppState>) {
         self.store = store
     }
 
     func newState(state: TestAppState) {
-        // Test if we've already dispatched this action to
-        // avoid endless recursion
-        if state.testValue != 5 {
-            self.store.dispatch(SetValueAction(5))
-        }
+        guard state.testValue == 2, !hasDispatchedFollowUp else { return }
+        hasDispatchedFollowUp = true
+        store.dispatchSync(SetValueAction(value: 5))
     }
 }
 
-class CallbackStoreSubscriber<T>: StoreSubscriber {
+final class DeinitObservingStore<State>: BatchStore<State> {
+    private let onDeinit: () -> Void
 
-    let handler: (T) -> Void
-
-    init(handler: @escaping (T) -> Void) {
-        self.handler = handler
+    init(
+        reducer: @escaping Reducer<State>,
+        state: State?,
+        middleware: [Middleware<State>] = [],
+        automaticallySkipsRepeats: Bool = true,
+        batchingWindow: TimeInterval? = nil,
+        onDeinit: @escaping () -> Void
+    ) {
+        self.onDeinit = onDeinit
+        super.init(
+            reducer: reducer,
+            state: state,
+            middleware: middleware,
+            automaticallySkipsRepeats: automaticallySkipsRepeats,
+            batchingWindow: batchingWindow
+        )
     }
 
-    func newState(state: T) {
-        handler(state)
+    required init(
+        reducer: @escaping Reducer<State>,
+        state: State?,
+        middleware: [Middleware<State>] = [],
+        automaticallySkipsRepeats: Bool = true,
+        batchingWindow: TimeInterval? = nil
+    ) {
+        self.onDeinit = {}
+        super.init(
+            reducer: reducer,
+            state: state,
+            middleware: middleware,
+            automaticallySkipsRepeats: automaticallySkipsRepeats,
+            batchingWindow: batchingWindow
+        )
+    }
+
+    deinit {
+        onDeinit()
     }
 }
