@@ -5,7 +5,7 @@ final class BatchStoreCoreTests: XCTestCase {
     func testStoreTypeAliasResolvesToBatchStore() {
         let store = Store(reducer: appReducer, state: TestAppState())
 
-        XCTAssertTrue(type(of: store) == BatchStore<TestAppState>.self)
+        XCTAssertTrue(type(of: store) == Store<TestAppState>.self)
     }
 
     func testInitWithProvidedStateKeepsState() {

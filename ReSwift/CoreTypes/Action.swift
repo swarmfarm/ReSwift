@@ -14,6 +14,10 @@ public protocol Action { }
 /// Reducers respond to this action by configuring their initial state.
 public struct ReSwiftInit: Action {}
 
+/// Default ActionType for BatchStore when no specific action enum is specified.
+/// Enables `BatchStore<State>` as shorthand for `BatchStore<State, DefaultStoreAction>`.
+public struct DefaultStoreAction: Action {}
+
 
 public protocol BatchedKeyedAction: Action {
     var batchKey: String { get }

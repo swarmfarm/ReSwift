@@ -7,7 +7,7 @@ final class BatchStoreBenchmarks: XCTestCase {
     private let subscriberCount = 3_000
 
     func testBenchmarkManyActions() {
-        measure(metrics: [XCTClockMetric()]) {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
             let store = Store(reducer: appReducer, state: TestAppState())
 
             for offset in 0..<actionCount {
@@ -19,7 +19,7 @@ final class BatchStoreBenchmarks: XCTestCase {
     }
 
     func testBenchmarkManyReducers() {
-        measure(metrics: [XCTClockMetric()]) {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
             let store = Store(
                 reducer: makeCompositeReducer(reducerCount: reducerCount),
                 state: BenchmarkState.reducerHeavy(count: reducerCount)
@@ -34,7 +34,7 @@ final class BatchStoreBenchmarks: XCTestCase {
     }
 
     func testBenchmarkManySubscribersUsingSelect() {
-        measure(metrics: [XCTClockMetric()]) {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
             let store = Store(
                 reducer: appReducer,
                 state: TestAppState(),
@@ -66,7 +66,7 @@ final class BatchStoreBenchmarks: XCTestCase {
             }
         }
 
-        measure(metrics: [XCTClockMetric()]) {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
             for offset in 0..<250 {
                 store.dispatch(SetValueAction(value: offset), concurrent: false)
             }
@@ -88,7 +88,7 @@ final class BatchStoreBenchmarks: XCTestCase {
             }
         }
 
-        measure(metrics: [XCTClockMetric()]) {
+        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()]) {
             for offset in 0..<250 {
                 store.dispatch(SetValueAction(value: offset), concurrent: true)
             }

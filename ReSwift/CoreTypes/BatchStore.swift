@@ -16,9 +16,9 @@ import os
  reducers you can combine them by initializing a `MainReducer` with all of your reducers as an
  argument.
  */
-typealias Store<T> = BatchStore<T>
+typealias Store<T> = BatchStore<T, DefaultStoreAction>
 
-open class BatchStore<State>: StoreType {
+open class BatchStore<State, ActionType: Action>: StoreType {
   
    
     
@@ -410,27 +410,27 @@ open class BatchStore<State>: StoreType {
     public typealias DispatchCallback = (State) -> Void
 
     @available(*, deprecated, message: "Deprecated in favor of https://github.com/ReSwift/ReSwift-Thunk")
-    public typealias ActionCreator = (_ state: State, _ store: BatchStore) -> Action?
+    public typealias ActionCreator = (_ state: State, _ store: BatchStore<State, ActionType>) -> Action?
 
     @available(*, deprecated, message: "Deprecated in favor of https://github.com/ReSwift/ReSwift-Thunk")
     public typealias AsyncActionCreator = (
         _ state: State,
-        _ store: BatchStore,
+        _ store: BatchStore<State, ActionType>,
         _ actionCreatorCallback: @escaping ((ActionCreator) -> Void)
     ) -> Void
     
-    public func dispatch(_ actionCreator: (State, BatchStore<State>) -> (any Action)?) {
+    public func dispatch(_ actionCreator: (State, BatchStore<State, ActionType>) -> (any Action)?) {
         if let action = actionCreator(state, self) {
             dispatch(action)
         }
     }
     
-    public func dispatch(_ asyncActionCreator: @escaping (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void) {
+    public func dispatch(_ asyncActionCreator: @escaping (State, BatchStore<State, ActionType>, @escaping (((State, BatchStore<State, ActionType>) -> (any Action)?) -> Void)) -> Void) {
         dispatch(asyncActionCreator, callback: nil)
 
     }
     
-    public func dispatch(_ asyncActionCreator: (State, BatchStore<State>, @escaping (((State, BatchStore<State>) -> (any Action)?) -> Void)) -> Void, callback: ((State) -> Void)?) {
+    public func dispatch(_ asyncActionCreator: (State, BatchStore<State, ActionType>, @escaping (((State, BatchStore<State, ActionType>) -> (any Action)?) -> Void)) -> Void, callback: ((State) -> Void)?) {
         asyncActionCreator(state, self) { [weak self] actionProvider in
             guard let self else {return}
             let action = actionProvider(self.state, self)

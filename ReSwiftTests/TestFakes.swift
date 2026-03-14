@@ -202,7 +202,7 @@ final class DispatchingSubscriber: StoreSubscriber {
     }
 }
 
-final class DeinitObservingStore<State>: BatchStore<State>, @unchecked Sendable {
+final class DeinitObservingStore<State>: BatchStore<State, DefaultStoreAction>, @unchecked Sendable {
     private let onDeinit: () -> Void
 
     init(
