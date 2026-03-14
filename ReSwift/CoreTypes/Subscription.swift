@@ -16,37 +16,34 @@
 /// subscription and passes any values that come through this subscriptions to the subscriber.
 import Foundation
 class SubscriptionBox<State> {
-
-    private let originalSubscription: Subscription<State>
     weak var subscriber: AnyStoreSubscriber?
     private let forward: (State?, State) -> Void
     let requiresOldState: Bool
 
-    init<T>(
+    init<S: StoreSubscriber>(
         originalSubscription: Subscription<State>,
-        transformedSubscription: Subscription<T>?,
-        subscriber: AnyStoreSubscriber
-    ) {
-        self.originalSubscription = originalSubscription
+        subscriber: S
+    ) where S.StoreSubscriberStateType == State {
+        self.subscriber = subscriber
+        self.requiresOldState = originalSubscription.requiresOldState
+        self.forward = { [weak subscriber] _, newState in
+            subscriber?.newState(state: newState)
+        }
+    }
+
+    init<SelectedState, S: StoreSubscriber>(
+        originalSubscription: Subscription<State>,
+        transformedSubscription: Subscription<SelectedState>,
+        subscriber: S
+    ) where S.StoreSubscriberStateType == SelectedState {
         self.subscriber = subscriber
 
-        // If we received a transformed subscription, we subscribe to that subscription
-        // and forward all new values to the subscriber.
-        if let transformedSubscription = transformedSubscription {
-            self.requiresOldState = originalSubscription.requiresOldState
-            transformedSubscription.observer = { [weak subscriber] _, newState in
-                subscriber?._newState(state: newState as Any)
-            }
-            self.forward = { [originalSubscription] oldState, newState in
-                originalSubscription.newValues(oldState: oldState, newState: newState)
-            }
-        // If we haven't received a transformed subscription, we forward all values
-        // from the original subscription.
-        } else {
-            self.requiresOldState = originalSubscription.requiresOldState
-            self.forward = { [weak subscriber] _, newState in
-                subscriber?._newState(state: newState as Any)
-            }
+        self.requiresOldState = originalSubscription.requiresOldState
+        transformedSubscription.observer = { [weak subscriber] _, newState in
+            subscriber?.newState(state: newState)
+        }
+        self.forward = { [originalSubscription] oldState, newState in
+            originalSubscription.newValues(oldState: oldState, newState: newState)
         }
     }
 
@@ -82,6 +79,21 @@ public class Subscription<State> {
         return subscription
     }
 
+    private func _select<Substate>(
+        _ keyPath: KeyPath<State, Substate>
+    ) -> Subscription<Substate> {
+        let subscription = Subscription<Substate> { sink in
+            self.observer = { oldState, newState in
+                let projectedOldState = self.requiresOldState ? oldState?[keyPath: keyPath] : nil
+                sink(projectedOldState, newState[keyPath: keyPath])
+            }
+        }
+        subscription.requiresOldStateMarker = { [weak self] in
+            self?.markRequiresOldState()
+        }
+        return subscription
+    }
+
     // MARK: Public Interface
 
     /// Initializes a subscription with a sink closure. The closure provides a way to send
@@ -109,7 +121,7 @@ public class Subscription<State> {
         _ keyPath: KeyPath<State, Substate>
         ) -> Subscription<Substate>
     {
-        return self._select { $0[keyPath: keyPath] }
+        return self._select(keyPath)
     }
 
     /// Provides a subscription that skips certain state updates of the original subscription.

@@ -11,14 +11,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.771000</real>
+					<real>0.757000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>11587.437000</real>
+					<real>11666.056000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -28,14 +28,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.268000</real>
+					<real>0.238000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>18662.096000</real>
+					<real>17921.491000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -45,7 +45,7 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.003000</real>
+					<real>0.004000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -59,7 +59,7 @@
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>18744.016000</real>
+					<real>18023.072000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -69,14 +69,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.141000</real>
+					<real>0.150000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>18776.784000</real>
+					<real>18055.840000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -86,14 +86,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.014000</real>
+					<real>0.015000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>18809.552000</real>
+					<real>18088.608000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -103,14 +103,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.327000</real>
+					<real>0.298000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>20123.549000</real>
+					<real>19399.328000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -120,14 +120,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.004200</real>
+					<real>0.004100</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>25101.018000</real>
+					<real>24452.197000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -144,7 +144,7 @@
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>27656.936000</real>
+					<real>27017.936000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -164,7 +164,7 @@
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>38879.976000</real>
+					<real>38208.208000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -181,7 +181,7 @@
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>38879.976000</real>
+					<real>38208.208000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
@@ -191,14 +191,14 @@
 				<key>com.apple.dt.XCTMetric_Clock.time.monotonic</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>0.053000</real>
+					<real>0.049000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>
 				<key>com.apple.dt.XCTMetric_Memory.physical_peak</key>
 				<dict>
 					<key>baselineAverage</key>
-					<real>39355.112000</real>
+					<real>38788.202000</real>
 					<key>baselineIntegrationDisplayName</key>
 					<string>Local Baseline</string>
 				</dict>

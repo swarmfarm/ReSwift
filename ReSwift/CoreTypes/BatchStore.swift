@@ -73,6 +73,7 @@ open class BatchStore<State, ActionType: Action>: StoreType {
     private var _batchedActions: [ActionType] = []
     private var _keyedBatchedActions: [String: ActionType] = [:]
 
+    private lazy var typedDispatchFunction: TypedDispatchFunction<ActionType> = createTypedDispatchFunction()
     public lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
     private var reducer: Reducer<State, ActionType>
@@ -99,6 +100,7 @@ open class BatchStore<State, ActionType: Action>: StoreType {
 
     public var middleware: [Middleware<State, ActionType>] {
         didSet {
+            typedDispatchFunction = createTypedDispatchFunction()
             dispatchFunction = createDispatchFunction()
         }
     }
@@ -113,6 +115,13 @@ open class BatchStore<State, ActionType: Action>: StoreType {
             return DefaultStoreAction.any(action) as? ActionType
         }
         return nil
+    }
+
+    private func actionDescription(_ action: ActionType) -> String {
+        if case .any(let wrapped) = action as? DefaultStoreAction {
+            return String(describing: wrapped)
+        }
+        return String(describing: action)
     }
 
     /// Initializes the store with a reducer, an initial state and a list of middleware.
@@ -143,26 +152,36 @@ open class BatchStore<State, ActionType: Action>: StoreType {
         self.state = state
     }
 
-    private func createDispatchFunction() -> DispatchFunction! {
+    private func createTypedDispatchFunction() -> TypedDispatchFunction<ActionType> {
+        guard !middleware.isEmpty else {
+            return { [unowned self] action in
+                self._defaultDispatch(action: action)
+            }
+        }
+
         let typedDispatch: TypedDispatchFunction<ActionType> = { [unowned self] action in
             self._defaultDispatch(action: action)
         }
 
-        let chain: TypedDispatchFunction<ActionType> = middleware
+        return middleware
             .reversed()
             .reduce(typedDispatch) { next, middleware in
                 let dispatch: TypedDispatchFunction<ActionType> = { [weak self] action in
-                    self?.dispatch(action, concurrent: false)
+                    self?.dispatchTyped(action, concurrent: false)
                 }
                 let getState: () -> State? = { [weak self] in
                     self?.state
                 }
                 return middleware(dispatch, getState)(next)
             }
+    }
+
+    private func createDispatchFunction() -> DispatchFunction! {
+        let typedDispatchFunction = self.typedDispatchFunction
 
         return { [unowned self] action in
             guard let typed = self.toActionType(action) else { return }
-            chain(typed)
+            typedDispatchFunction(typed)
         }
     }
 
@@ -204,15 +223,29 @@ open class BatchStore<State, ActionType: Action>: StoreType {
                    transformedSubscription: transformedSubscription)
     }
 
-    func subscriptionBox<T>(
+    func subscriptionBox<S: StoreSubscriber>(
         originalSubscription: Subscription<State>,
-        transformedSubscription: Subscription<T>?,
-        subscriber: AnyStoreSubscriber
-        ) -> SubscriptionBox<State> {
+        transformedSubscription: Subscription<State>?,
+        subscriber: S
+        ) -> SubscriptionBox<State>
+        where S.StoreSubscriberStateType == State {
 
         return SubscriptionBox(
             originalSubscription: originalSubscription,
-            transformedSubscription: transformedSubscription,
+            subscriber: subscriber
+        )
+    }
+
+    func subscriptionBox<T, S: StoreSubscriber>(
+        originalSubscription: Subscription<State>,
+        transformedSubscription: Subscription<T>?,
+        subscriber: S
+        ) -> SubscriptionBox<State>
+        where S.StoreSubscriberStateType == T {
+
+        return SubscriptionBox(
+            originalSubscription: originalSubscription,
+            transformedSubscription: transformedSubscription!,
             subscriber: subscriber
         )
     }
@@ -349,7 +382,7 @@ open class BatchStore<State, ActionType: Action>: StoreType {
                 "ReSwift:ConcurrentMutationError- Action has been dispatched while" +
                 " a previous action is being processed. A reducer" +
                 " is dispatching an action, or ReSwift is used in a concurrent context" +
-                " (e.g. from multiple threads). Action: \(action)"
+                " (e.g. from multiple threads). Action: \(actionDescription(action))"
             )
         }
         isDispatching = true
@@ -361,23 +394,25 @@ open class BatchStore<State, ActionType: Action>: StoreType {
         isDispatchingLock.unlock()
     }
     
-    public func dispatch(_ action: any Action, concurrent: Bool = false) {
-        guard state != nil else {
-            return
-        }
-        guard let typed = toActionType(action) else {
-            return
-        }
+    private func dispatchTyped(_ action: ActionType, concurrent: Bool = false) {
+        guard state != nil else { return }
 
         let snapshot = subscriptionSnapshot()
         guard !snapshot.isEmpty else {
-            dispatchFunction(typed)
+            typedDispatchFunction(action)
             return
         }
 
         let currentState = shouldCapturePreviousState(for: snapshot) ? state! : nil
-        dispatchFunction(typed)
+        typedDispatchFunction(action)
         notifySubscriptions(snapshot: snapshot, previousState: currentState, concurrent: concurrent)
+    }
+
+    public func dispatch(_ action: any Action, concurrent: Bool = false) {
+        guard let typed = toActionType(action) else {
+            return
+        }
+        dispatchTyped(typed, concurrent: concurrent)
     }
 
   
@@ -472,10 +507,10 @@ open class BatchStore<State, ActionType: Action>: StoreType {
                                 return
                             }
                             for action in self._batchedActions {
-                                self.dispatchFunction(action)
+                                self.typedDispatchFunction(action)
                             }
                             for action in self._keyedBatchedActions.values {
-                                self.dispatchFunction(action)
+                                self.typedDispatchFunction(action)
                             }
                             self._batchedActions = []
                             self._keyedBatchedActions = [:]
