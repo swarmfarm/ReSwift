@@ -76,8 +76,9 @@ struct KeyedValueAction: BatchedKeyedAction {
     let value: Int?
 }
 
-func appReducer(action: Action, state: inout TestAppState) {
-    switch action {
+func appReducer(action: DefaultStoreAction, state: inout TestAppState) {
+    guard case .any(let inner) = action else { return }
+    switch inner {
     case let action as SetValueAction:
         state.testValue = action.value
     case let action as IncrementAction:
@@ -95,12 +96,10 @@ func appReducer(action: Action, state: inout TestAppState) {
     }
 }
 
-func nonEquatableReducer(action: Action, state: inout TestNonEquatableState) {
-    switch action {
-    case let action as SetNonEquatableAction:
+func nonEquatableReducer(action: DefaultStoreAction, state: inout TestNonEquatableState) {
+    guard case .any(let inner) = action else { return }
+    if let action = inner as? SetNonEquatableAction {
         state.payload = NonEquatablePayload(value: action.value)
-    default:
-        break
     }
 }
 
@@ -206,9 +205,9 @@ final class DeinitObservingStore<State>: BatchStore<State, DefaultStoreAction>, 
     private let onDeinit: () -> Void
 
     init(
-        reducer: @escaping Reducer<State>,
+        reducer: @escaping Reducer<State, DefaultStoreAction>,
         state: State?,
-        middleware: [Middleware<State>] = [],
+        middleware: [Middleware<State, DefaultStoreAction>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil,
         onDeinit: @escaping () -> Void
@@ -224,9 +223,9 @@ final class DeinitObservingStore<State>: BatchStore<State, DefaultStoreAction>, 
     }
 
     required init(
-        reducer: @escaping Reducer<State>,
+        reducer: @escaping Reducer<State, DefaultStoreAction>,
         state: State?,
-        middleware: [Middleware<State>] = [],
+        middleware: [Middleware<State, DefaultStoreAction>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil
     ) {

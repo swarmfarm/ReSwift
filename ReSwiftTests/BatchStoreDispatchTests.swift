@@ -7,22 +7,22 @@ private final class WeakStoreBox<State>: @unchecked Sendable {
 
 final class BatchStoreDispatchTests: XCTestCase {
     func testMiddlewareDecoratesActionsInOrder() {
-        let first: Middleware<TestAppState> = { _, _ in
+        let first: Middleware<TestAppState, DefaultStoreAction> = { _, _ in
             { next in
                 { action in
-                    if let action = action as? SetLabelAction {
-                        next(SetLabelAction(value: action.value + " First"))
+                    if case .any(let inner) = action, let labelAction = inner as? SetLabelAction {
+                        next(.any(SetLabelAction(value: labelAction.value + " First")))
                     } else {
                         next(action)
                     }
                 }
             }
         }
-        let second: Middleware<TestAppState> = { _, _ in
+        let second: Middleware<TestAppState, DefaultStoreAction> = { _, _ in
             { next in
                 { action in
-                    if let action = action as? SetLabelAction {
-                        next(SetLabelAction(value: action.value + " Second"))
+                    if case .any(let inner) = action, let labelAction = inner as? SetLabelAction {
+                        next(.any(SetLabelAction(value: labelAction.value + " Second")))
                     } else {
                         next(action)
                     }
@@ -41,11 +41,11 @@ final class BatchStoreDispatchTests: XCTestCase {
     }
 
     func testMiddlewareCanDispatchAdditionalActions() {
-        let middleware: Middleware<TestAppState> = { dispatch, _ in
+        let middleware: Middleware<TestAppState, DefaultStoreAction> = { dispatch, _ in
             { next in
                 { action in
-                    if let action = action as? SetValueAction {
-                        dispatch(SetLabelAction(value: "\(action.value ?? 0)"))
+                    if case .any(let inner) = action, let valueAction = inner as? SetValueAction {
+                        dispatch(.any(SetLabelAction(value: "\(valueAction.value ?? 0)")))
                     }
                     next(action)
                 }
@@ -64,12 +64,16 @@ final class BatchStoreDispatchTests: XCTestCase {
     }
 
     func testMiddlewareCanReadStateAndSwallowAction() {
-        let middleware: Middleware<TestAppState> = { dispatch, getState in
+        let middleware: Middleware<TestAppState, DefaultStoreAction> = { dispatch, getState in
             { next in
                 { action in
-                    if getState()?.label == "OK", (action as? SetLabelAction)?.value != "Blocked" {
-                        dispatch(SetLabelAction(value: "Blocked"))
-                        next(NoOpAction())
+                    if case .any(let inner) = action {
+                        if getState()?.label == "OK", (inner as? SetLabelAction)?.value != "Blocked" {
+                            dispatch(.any(SetLabelAction(value: "Blocked")))
+                            next(.any(NoOpAction()))
+                        } else {
+                            next(action)
+                        }
                     } else {
                         next(action)
                     }
@@ -93,8 +97,8 @@ final class BatchStoreDispatchTests: XCTestCase {
         store.middleware = [{ _, _ in
             { next in
                 { action in
-                    if let action = action as? SetLabelAction {
-                        next(SetLabelAction(value: action.value + " Added"))
+                    if case .any(let inner) = action, let labelAction = inner as? SetLabelAction {
+                        next(.any(SetLabelAction(value: labelAction.value + " Added")))
                     } else {
                         next(action)
                     }
@@ -255,7 +259,7 @@ final class BatchStoreDispatchTests: XCTestCase {
         let weakStore = WeakStoreBox<TestAppState>()
         let store = Store<TestAppState>(
             reducer: { action, state in
-                guard action is SetValueAction else { return }
+                guard case .any(let inner) = action, inner is SetValueAction else { return }
                 MainActor.assumeIsolated {
                     self.expectFatalError(expectedMessage:
                         "ReSwift:ConcurrentMutationError- Action has been dispatched while a previous action is being processed. A reducer is dispatching an action, or ReSwift is used in a concurrent context (e.g. from multiple threads). Action: SetValueAction(value: Optional(20))"

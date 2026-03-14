@@ -70,12 +70,12 @@ open class BatchStore<State, ActionType: Action>: StoreType {
     private var _isBatching: Bool = false
     
     /// Queue of actions to batch process
-    private var _batchedActions: [Action] = []
-    private var _keyedBatchedActions: [String: Action] = [:]
+    private var _batchedActions: [ActionType] = []
+    private var _keyedBatchedActions: [String: ActionType] = [:]
 
     public lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
-    private var reducer: Reducer<State>
+    private var reducer: Reducer<State, ActionType>
 
     private var subscriptionsLock = NSLock()
     private var _subscriptions: [SubscriptionRecord] = []
@@ -97,10 +97,22 @@ open class BatchStore<State, ActionType: Action>: StoreType {
     /// by default.
     fileprivate let subscriptionsAutomaticallySkipRepeats: Bool
 
-    public var middleware: [Middleware<State>] {
+    public var middleware: [Middleware<State, ActionType>] {
         didSet {
             dispatchFunction = createDispatchFunction()
         }
+    }
+
+    /// Converts an `Action` to `ActionType` for processing. For `DefaultStoreAction`, wraps as `.any`.
+    /// For other action types, returns `nil` if the action cannot be cast.
+    private func toActionType(_ action: Action) -> ActionType? {
+        if let typed = action as? ActionType {
+            return typed
+        }
+        if ActionType.self == DefaultStoreAction.self {
+            return DefaultStoreAction.any(action) as? ActionType
+        }
+        return nil
     }
 
     /// Initializes the store with a reducer, an initial state and a list of middleware.
@@ -116,9 +128,9 @@ open class BatchStore<State, ActionType: Action>: StoreType {
     ///   to skip idempotent state updates when a subscriber's state type
     ///   implements `Equatable`. Defaults to `true`.
     public required init(
-        reducer: @escaping Reducer<State>,
+        reducer: @escaping Reducer<State, ActionType>,
         state: State?,
-        middleware: [Middleware<State>] = [],
+        middleware: [Middleware<State, ActionType>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil
     ) {
@@ -132,29 +144,26 @@ open class BatchStore<State, ActionType: Action>: StoreType {
     }
 
     private func createDispatchFunction() -> DispatchFunction! {
-        // Wrap the dispatch function with all middlewares
-        guard !middleware.isEmpty else {
-            return { [unowned self] action in
-                self._defaultDispatch(action: action)
-            }
+        let typedDispatch: TypedDispatchFunction<ActionType> = { [unowned self] action in
+            self._defaultDispatch(action: action)
         }
 
-        return middleware
+        let chain: TypedDispatchFunction<ActionType> = middleware
             .reversed()
-            .reduce(
-                { [unowned self] action in
-                    self._defaultDispatch(action: action)
-                },
-                { dispatchFunction, middleware in
-                    let dispatch: (Action) -> Void = { [weak self] in
-                        self?.dispatch($0, concurrent: false)
-                    }
-                    let getState: () -> State? = { [weak self] in
-                        self?.state
-                    }
-                    return middleware(dispatch, getState)(dispatchFunction)
+            .reduce(typedDispatch) { next, middleware in
+                let dispatch: TypedDispatchFunction<ActionType> = { [weak self] action in
+                    self?.dispatch(action, concurrent: false)
                 }
-            )
+                let getState: () -> State? = { [weak self] in
+                    self?.state
+                }
+                return middleware(dispatch, getState)(next)
+            }
+
+        return { [unowned self] action in
+            guard let typed = self.toActionType(action) else { return }
+            chain(typed)
+        }
     }
 
     fileprivate func _subscribe<SelectedState, S: StoreSubscriber>(
@@ -332,7 +341,7 @@ open class BatchStore<State, ActionType: Action>: StoreType {
         }
     }
     // swiftlint:disable:next identifier_name
-    open func _defaultDispatch(action: Action) {
+    open func _defaultDispatch(action: ActionType) {
         isDispatchingLock.lock()
         guard !isDispatching else {
             isDispatchingLock.unlock()
@@ -352,19 +361,22 @@ open class BatchStore<State, ActionType: Action>: StoreType {
         isDispatchingLock.unlock()
     }
     
-    public func dispatch(_ action: Action, concurrent: Bool = false) {
+    public func dispatch(_ action: any Action, concurrent: Bool = false) {
         guard state != nil else {
+            return
+        }
+        guard let typed = toActionType(action) else {
             return
         }
 
         let snapshot = subscriptionSnapshot()
         guard !snapshot.isEmpty else {
-            dispatchFunction(action)
+            dispatchFunction(typed)
             return
         }
 
         let currentState = shouldCapturePreviousState(for: snapshot) ? state! : nil
-        dispatchFunction(action)
+        dispatchFunction(typed)
         notifySubscriptions(snapshot: snapshot, previousState: currentState, concurrent: concurrent)
     }
 
@@ -394,7 +406,7 @@ open class BatchStore<State, ActionType: Action>: StoreType {
         return value
     }()
 
-    open func dispatchSync(_ action: Action, concurrent: Bool = true) {
+    open func dispatchSync(_ action: any Action, concurrent: Bool = true) {
         if !isOnStoreQueue {
             queue.sync(execute: { [weak self] in
                 guard let self else {return}
@@ -417,24 +429,35 @@ open class BatchStore<State, ActionType: Action>: StoreType {
   
   
    
-    open func dispatchAsync(_ action: Action, concurrent: Bool = false) {
+    open func dispatchAsync(_ action: any Action, concurrent: Bool = false) {
         let action = UnsafeTransfer(value: action)
         queue.async(execute: { [weak self] in
             self?.dispatch(action.value, concurrent: concurrent)
         })
     }
-    open func dispatchBatched(_ action: Action) {
+    open func dispatchBatched(_ action: any Action) {
         let action = UnsafeTransfer(value: action)
         batchingQueue.async { [weak self] in
             guard let self = self else {
                 return
             }
+            guard let typed = self.toActionType(action.value) else {
+                return
+            }
             if let batchingWindow = self._batchingWindow {
-                if let action = action.value as? BatchedKeyedAction {
-                    self._keyedBatchedActions[action.batchKey] = action
+                let batchKey: String?
+                if let keyed = typed as? BatchedKeyedAction {
+                    batchKey = keyed.batchKey
+                } else if case .any(let inner) = typed as? DefaultStoreAction,
+                          let keyed = inner as? BatchedKeyedAction {
+                    batchKey = keyed.batchKey
+                } else {
+                    batchKey = nil
                 }
-                else {
-                    self._batchedActions.append(action.value)
+                if let key = batchKey {
+                    self._keyedBatchedActions[key] = typed
+                } else {
+                    self._batchedActions.append(typed)
                 }
                
                 if !self._isBatching {

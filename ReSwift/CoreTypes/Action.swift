@@ -16,7 +16,10 @@ public struct ReSwiftInit: Action {}
 
 /// Default ActionType for BatchStore when no specific action enum is specified.
 /// Enables `BatchStore<State>` as shorthand for `BatchStore<State, DefaultStoreAction>`.
-public struct DefaultStoreAction: Action {}
+/// Wraps any `Action` so reducers and middleware can use a single action type.
+public enum DefaultStoreAction: Action {
+    case any(any Action)
+}
 
 
 public protocol BatchedKeyedAction: Action {

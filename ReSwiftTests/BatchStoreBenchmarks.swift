@@ -180,10 +180,10 @@ private struct BenchmarkSubscriberAction: Action {
     let seed: Int
 }
 
-private func makeCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkState> {
-    let reducers: [Reducer<BenchmarkState>] = (0..<reducerCount).map { index in
+private func makeCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkState, DefaultStoreAction> {
+    let reducers: [Reducer<BenchmarkState, DefaultStoreAction>] = (0..<reducerCount).map { index in
         { action, state in
-            guard let action = action as? BenchmarkReducerAction else { return }
+            guard case .any(let inner) = action, let action = inner as? BenchmarkReducerAction else { return }
             state.sections[index] = (state.sections[index] + action.seed + index) % 10_000
             state.checksum = (state.checksum &+ state.sections[index]) % 1_000_000
         }
@@ -196,10 +196,10 @@ private func makeCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkState> 
     }
 }
 
-private func makeSelectFriendlyCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkSubscriberState> {
-    let reducers: [Reducer<BenchmarkSubscriberState>] = (0..<reducerCount).map { index in
+private func makeSelectFriendlyCompositeReducer(reducerCount: Int) -> Reducer<BenchmarkSubscriberState, DefaultStoreAction> {
+    let reducers: [Reducer<BenchmarkSubscriberState, DefaultStoreAction>] = (0..<reducerCount).map { index in
         { action, state in
-            guard let action = action as? BenchmarkSubscriberAction else { return }
+            guard case .any(let inner) = action, let action = inner as? BenchmarkSubscriberAction else { return }
             state.sections[index] = (state.sections[index] + action.seed + index) % 10_000
         }
     }

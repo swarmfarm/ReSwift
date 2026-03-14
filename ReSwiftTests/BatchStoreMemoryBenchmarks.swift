@@ -91,8 +91,9 @@ private struct MutateSingleBlobAction: Action {
     let seed: Int
 }
 
-private func largeMemoryReducer(action: Action, state: inout LargeMemoryState) {
-    switch action {
+private func largeMemoryReducer(action: DefaultStoreAction, state: inout LargeMemoryState) {
+    guard case .any(let inner) = action else { return }
+    switch inner {
     case let action as ReplaceLargePayloadAction:
         state.payload = action.payload
         state.version = (action.payload.first?.first).map(Int.init) ?? state.version
