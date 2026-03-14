@@ -87,7 +87,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
     private final class RemovalBuffer: @unchecked Sendable {
         private let lock = NSLock()
-        private var ids: ContiguousArray<Int> = []
+        private var ids: [Int] = []
 
         func append(_ id: Int) {
             lock.lock()
@@ -103,7 +103,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
         func snapshot() -> [Int] {
             lock.lock()
-            let snapshot = Array(ids)
+            let snapshot = ids
             lock.unlock()
             return snapshot
         }
@@ -134,7 +134,6 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     private let subscriptionsLock = NSLock()
     private var _subscriptions: ContiguousArray<SubscriptionRecord> = []
     private var nextSubscriptionID = 0
-    private let concurrentNotificationChunkCount = max(1, ProcessInfo.processInfo.activeProcessorCount)
     var subscriptions: [SubscriptionType] {
         subscriptionsLock.lock()
         let subscriptions = _subscriptions.map(\.box)
@@ -326,36 +325,26 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     ) {
         let nextState = UnsafeTransfer(value: nextState)
         let subscriptionsToRemove = RemovalBuffer()
-        let chunkCount = min(concurrentNotificationChunkCount, snapshot.count)
 
         isRunningInGroup = true
         defer { isRunningInGroup = false }
 
-        let chunkSize = (snapshot.count + chunkCount - 1) / chunkCount
-        for chunkIndex in 0..<chunkCount {
-            let start = chunkIndex * chunkSize
-            let end = min(start + chunkSize, snapshot.count)
-            guard start < end else { break }
+        for record in snapshot {
+            if record.box.subscriber == nil {
+                subscriptionsToRemove.append(record.id)
+                continue
+            }
 
             group.enter()
-            concurrentQueue.async { [snapshot, nextState, subscriptionsToRemove] in
+            concurrentQueue.async { [record, nextState, subscriptionsToRemove] in
                 defer { self.group.leave() }
-                var localRemovals: ContiguousArray<Int> = []
-                localRemovals.reserveCapacity((end - start) / 8)
 
-                for index in start..<end {
-                    let record = snapshot[index]
-                    guard record.box.subscriber != nil else {
-                        localRemovals.append(record.id)
-                        continue
-                    }
-
-                    record.box.newValues(newState: nextState.value)
+                guard record.box.subscriber != nil else {
+                    subscriptionsToRemove.append(record.id)
+                    return
                 }
 
-                if !localRemovals.isEmpty {
-                    subscriptionsToRemove.append(contentsOf: localRemovals)
-                }
+                record.box.newValues(newState: nextState.value)
             }
         }
 
