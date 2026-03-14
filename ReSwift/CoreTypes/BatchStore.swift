@@ -86,23 +86,26 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     }
 
     private final class RemovalBuffer: @unchecked Sendable {
-        private let lock = UnfairLock()
+        private let lock = NSLock()
         private var ids: ContiguousArray<Int> = []
 
         func append(_ id: Int) {
-            lock.withLock {
-                ids.append(id)
-            }
+            lock.lock()
+            ids.append(id)
+            lock.unlock()
         }
 
         func append(contentsOf newIDs: some Sequence<Int>) {
-            lock.withLock {
-                ids.append(contentsOf: newIDs)
-            }
+            lock.lock()
+            ids.append(contentsOf: newIDs)
+            lock.unlock()
         }
 
         func snapshot() -> [Int] {
-            lock.withLock { Array(ids) }
+            lock.lock()
+            let snapshot = Array(ids)
+            lock.unlock()
+            return snapshot
         }
     }
 
@@ -128,15 +131,18 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
     public private(set) lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
-    private let subscriptionsLock = UnfairLock()
+    private let subscriptionsLock = NSLock()
     private var _subscriptions: ContiguousArray<SubscriptionRecord> = []
     private var nextSubscriptionID = 0
     private let concurrentNotificationChunkCount = max(1, ProcessInfo.processInfo.activeProcessorCount)
     var subscriptions: [SubscriptionType] {
-        subscriptionsLock.withLock { _subscriptions.map(\.box) }
+        subscriptionsLock.lock()
+        let subscriptions = _subscriptions.map(\.box)
+        subscriptionsLock.unlock()
+        return subscriptions
     }
 
-    private let isDispatchingLock = UnfairLock()
+    private let isDispatchingLock = NSLock()
     private var isDispatching = false
 
     fileprivate let subscriptionsAutomaticallySkipRepeats: Bool
@@ -192,10 +198,10 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
             subscriber: subscriber
         )
 
-        subscriptionsLock.withLock {
-            _subscriptions.append(SubscriptionRecord(id: nextSubscriptionID, box: subscriptionBox))
-            nextSubscriptionID &+= 1
-        }
+        subscriptionsLock.lock()
+        _subscriptions.append(SubscriptionRecord(id: nextSubscriptionID, box: subscriptionBox))
+        nextSubscriptionID &+= 1
+        subscriptionsLock.unlock()
 
         originalSubscription.newValues(newState: state)
     }
@@ -257,39 +263,42 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
     }
 
     private func removeFirstSubscription(for subscriber: AnyStoreSubscriber) {
-        subscriptionsLock.withLock {
-            if let index = _subscriptions.firstIndex(where: { $0.box.subscriber === subscriber }) {
-                _subscriptions[index].box.subscriber = nil
-                _subscriptions.remove(at: index)
-            }
+        subscriptionsLock.lock()
+        if let index = _subscriptions.firstIndex(where: { $0.box.subscriber === subscriber }) {
+            _subscriptions[index].box.subscriber = nil
+            _subscriptions.remove(at: index)
         }
+        subscriptionsLock.unlock()
     }
 
     private func removeSubscriptions(withIDs ids: [Int]) {
         guard !ids.isEmpty else { return }
-        subscriptionsLock.withLock {
-            switch ids.count {
-            case 1:
-                let target = ids[0]
-                _subscriptions.removeAll { record in
-                    guard record.id == target else { return false }
-                    record.box.subscriber = nil
-                    return true
-                }
-            default:
-                let idSet = Set(ids)
-                _subscriptions.removeAll { record in
-                    guard idSet.contains(record.id) else { return false }
-                    record.box.subscriber = nil
-                    return true
-                }
+        subscriptionsLock.lock()
+        switch ids.count {
+        case 1:
+            let target = ids[0]
+            _subscriptions.removeAll { record in
+                guard record.id == target else { return false }
+                record.box.subscriber = nil
+                return true
+            }
+        default:
+            let idSet = Set(ids)
+            _subscriptions.removeAll { record in
+                guard idSet.contains(record.id) else { return false }
+                record.box.subscriber = nil
+                return true
             }
         }
+        subscriptionsLock.unlock()
     }
 
     @inline(__always)
     private func subscriptionSnapshot() -> ContiguousArray<SubscriptionRecord> {
-        subscriptionsLock.withLock { _subscriptions }
+        subscriptionsLock.lock()
+        let snapshot = _subscriptions
+        subscriptionsLock.unlock()
+        return snapshot
     }
 
     @inline(__always)

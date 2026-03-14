@@ -120,10 +120,13 @@ private enum RepeatTransition<Value> {
 }
 
 private final class RepeatStateBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
     private var state: RepeatState<Value> = .empty
 
     @inline(__always)
     func update(with newValue: Value) -> RepeatTransition<Value> {
+        lock.lock()
+        defer { lock.unlock() }
         switch state {
         case .empty:
             state = .value(newValue)
