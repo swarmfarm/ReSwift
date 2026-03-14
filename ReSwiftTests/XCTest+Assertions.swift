@@ -13,6 +13,28 @@ import XCTest
 
 private let noReturnFailureWaitTime = 0.1
 
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    func set(_ newValue: Value) {
+        lock.lock()
+        defer { lock.unlock() }
+        value = newValue
+    }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+@MainActor
 public extension XCTestCase {
     /**
      Expects an `fatalError` to be called.
@@ -31,7 +53,7 @@ public extension XCTestCase {
             functionName: "fatalError",
             file: file,
             line: line,
-            function: { (caller: @escaping (String) -> Void) -> Void in
+            function: { (caller: @escaping @Sendable (String) -> Void) -> Void in
                 Assertions.fatalErrorClosure = { message, _, _ in caller(message) }
         },
             expectedMessage: expectedMessage,
@@ -48,16 +70,16 @@ public extension XCTestCase {
         functionName funcName: String,
         file: StaticString,
         line: UInt,
-        function: (_ caller: @escaping (String) -> Void) -> Void,
+        function: (_ caller: @escaping @Sendable (String) -> Void) -> Void,
         expectedMessage: String? = nil,
         testCase: @escaping () -> Void,
-        cleanUp: @escaping () -> Void) {
+        cleanUp: @escaping @Sendable () -> Void) {
 
         let asyncExpectation = futureExpectation(withDescription: funcName + "-Expectation")
-        var assertionMessage: String?
+        let assertionMessage = LockedValue<String?>(nil)
 
         function { (message) -> Void in
-            assertionMessage = message
+            assertionMessage.set(message)
             asyncExpectation.fulfill()
         }
 
@@ -66,7 +88,7 @@ public extension XCTestCase {
 
         waitForFutureExpectations(withTimeout: noReturnFailureWaitTime) { _ in
             defer { cleanUp() }
-            guard let assertionMessage = assertionMessage else {
+            guard let assertionMessage = assertionMessage.get() else {
                 XCTFail(funcName + " is expected to be called.", file: file, line: line)
                 return
             }

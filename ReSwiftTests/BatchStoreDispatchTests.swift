@@ -1,6 +1,10 @@
 import XCTest
 @testable import ReSwift
 
+private final class WeakStoreBox<State>: @unchecked Sendable {
+    weak var store: Store<State>?
+}
+
 final class BatchStoreDispatchTests: XCTestCase {
     func testMiddlewareDecoratesActionsInOrder() {
         let first: Middleware<TestAppState> = { _, _ in
@@ -248,20 +252,24 @@ final class BatchStoreDispatchTests: XCTestCase {
     }
 
     func testReducerDispatchingDuringReductionRaisesFatalError() {
-        weak var weakStore: Store<TestAppState>?
+        let weakStore = WeakStoreBox<TestAppState>()
         let store = Store<TestAppState>(
             reducer: { action, state in
                 guard action is SetValueAction else { return }
-                self.expectFatalError(expectedMessage:
-                    "ReSwift:ConcurrentMutationError- Action has been dispatched while a previous action is being processed. A reducer is dispatching an action, or ReSwift is used in a concurrent context (e.g. from multiple threads). Action: SetValueAction(value: Optional(20))"
-                ) {
-                    weakStore?.dispatch(SetValueAction(value: 20))
+                MainActor.assumeIsolated {
+                    self.expectFatalError(expectedMessage:
+                        "ReSwift:ConcurrentMutationError- Action has been dispatched while a previous action is being processed. A reducer is dispatching an action, or ReSwift is used in a concurrent context (e.g. from multiple threads). Action: SetValueAction(value: Optional(20))"
+                    ) {
+                        weakStore.store?.dispatch(SetValueAction(value: 20))
+                    }
                 }
             },
             state: TestAppState()
         )
-        weakStore = store
+        weakStore.store = store
 
         store.dispatch(SetValueAction(value: 10))
     }
 }
+
+extension BatchStoreDispatchTests: @unchecked Sendable {}

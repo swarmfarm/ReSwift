@@ -26,7 +26,7 @@ func raiseFatalError(_ message: @autoclosure () -> String = "",
 /// Stores custom assertions closures, by default it points to Swift functions. But test target can
 /// override them.
 class Assertions {
-    static var fatalErrorClosure = swiftFatalErrorClosure
-    static let swiftFatalErrorClosure: (String, StaticString, UInt) -> Void
+    nonisolated(unsafe) static var fatalErrorClosure = swiftFatalErrorClosure
+    static let swiftFatalErrorClosure: @Sendable (String, StaticString, UInt) -> Void
         = { Swift.fatalError($0, file: $1, line: $2) }
 }

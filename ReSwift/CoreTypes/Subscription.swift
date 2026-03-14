@@ -76,6 +76,8 @@ class SubscriptionBox<State>: Hashable {
     }
 }
 
+extension SubscriptionBox: @unchecked Sendable {}
+
 /// Represents a subscription of a subscriber to the store. The subscription determines which new
 /// values from the store are forwarded to the subscriber, and how they are transformed.
 /// The subscription acts as a very-light weight signal/observable that you might know from
@@ -159,6 +161,8 @@ public class Subscription<State> {
         self.observer?(oldState, newState)
     }
 }
+
+extension Subscription: @unchecked Sendable {}
 
 extension Subscription where State: Equatable {
     public func skipRepeats() -> Subscription<State>{

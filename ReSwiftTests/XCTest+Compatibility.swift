@@ -11,16 +11,16 @@ func dispatchUserInitiatedAsync
     DispatchQueue.global(qos: .userInitiated).async(execute: work)
 }
 
+@MainActor
 extension XCTestCase {
 
     func futureExpectation(withDescription description: String) -> XCTestExpectation {
-        return expectation(description: description)
+        expectation(description: description)
     }
 
     func waitForFutureExpectations(
         withTimeout timeout: TimeInterval,
-        handler: XCWaitCompletionHandler? = nil) {
-
+        handler: (@Sendable ((any Error)?) -> Void)? = nil) {
         waitForExpectations(timeout: timeout, handler: handler)
     }
 }

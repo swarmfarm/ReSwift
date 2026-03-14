@@ -7,7 +7,7 @@
 //  Copyright © 2015 ReSwift Community. All rights reserved.
 //
 import Foundation
-import Dispatch
+@preconcurrency import Dispatch
 import os
 /**
  This class is the default implementation of the `StoreType` protocol. You will use this store in most
@@ -223,9 +223,10 @@ open class BatchStore<State>: StoreType {
                 #endif
                 if shouldRunConcurrently {
                     group.enter()
+                    let group = self.group
                     concurrentQueue.async { [weak self] in
                         defer {
-                            self?.group.leave()
+                            group.leave()
                         }
                         guard  let self else {
                             return
@@ -444,6 +445,8 @@ open class BatchStore<State>: StoreType {
    
     
 }
+
+extension BatchStore: @unchecked Sendable {}
 
 // MARK: Skip Repeats for Equatable States
 
