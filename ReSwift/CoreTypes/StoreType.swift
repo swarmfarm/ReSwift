@@ -14,7 +14,7 @@
  */
 public protocol StoreType: DispatchingStoreType {
 
-    associatedtype State
+    associatedtype State: Sendable
 
     /// The current state stored in the store.
     var state: State! { get }
@@ -143,7 +143,7 @@ public protocol StoreType: DispatchingStoreType {
      store.dispatch( noteActionCreator.deleteNote(3) )
      ```
      */
-    func dispatch(_ action: Action, concurrent: Bool)
+    func dispatch(_ action: any Action, concurrent: Bool)
 
 
     /**
@@ -194,7 +194,7 @@ public protocol StoreType: DispatchingStoreType {
      ```
 
      */
-    associatedtype ActionCreator = (_ state: State, _ store: StoreType) -> Action?
+    associatedtype ActionCreator = (_ state: State, _ store: StoreType) -> (any Action)?
 
     /// AsyncActionCreators allow the developer to wait for the completion of an async action.
     associatedtype AsyncActionCreator =

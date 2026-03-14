@@ -7,9 +7,8 @@
 //
 
 /// A pure function that reduces an action and current state into a new state.
-/// When using a typed store `BatchStore<State, ActionType>`, the reducer must accept that `ActionType`.
-public typealias Reducer<ReducerStateType, ActionType: Action> =
-    (_ action: ActionType, _ state: inout ReducerStateType) -> Void
+public typealias Reducer<ReducerStateType: Sendable, ActionType: Sendable> =
+    (_ action: borrowing ActionType, _ state: inout ReducerStateType) -> Void
 
-/// Convenience alias for `Reducer<State, DefaultStoreAction>`, used with `Store<State>`.
-public typealias DefaultReducer<State> = Reducer<State, DefaultStoreAction>
+/// Convenience alias for `Reducer<State, any Action>`, used with `Store<State>`.
+public typealias DefaultReducer<State: Sendable> = Reducer<State, any Action>

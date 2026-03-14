@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import ReSwift
 
-struct TestAppState: Equatable {
+struct TestAppState: Equatable, Sendable {
     var testValue: Int?
     var label: String
     var nested: NestedState
@@ -21,7 +21,7 @@ struct TestAppState: Equatable {
     }
 }
 
-struct NestedState: Equatable {
+struct NestedState: Equatable, Sendable {
     var value: Int
 
     init(value: Int = 0) {
@@ -29,7 +29,7 @@ struct NestedState: Equatable {
     }
 }
 
-struct TestNonEquatableState {
+struct TestNonEquatableState: Sendable {
     var payload: NonEquatablePayload
 
     init(payload: NonEquatablePayload = NonEquatablePayload()) {
@@ -37,7 +37,7 @@ struct TestNonEquatableState {
     }
 }
 
-struct NonEquatablePayload {
+struct NonEquatablePayload: Sendable {
     var value: String
 
     init(value: String = "Initial") {
@@ -76,9 +76,8 @@ struct KeyedValueAction: BatchedKeyedAction {
     let value: Int?
 }
 
-func appReducer(action: DefaultStoreAction, state: inout TestAppState) {
-    guard case .any(let inner) = action else { return }
-    switch inner {
+func appReducer(action: any Action, state: inout TestAppState) {
+    switch action {
     case let action as SetValueAction:
         state.testValue = action.value
     case let action as IncrementAction:
@@ -96,9 +95,8 @@ func appReducer(action: DefaultStoreAction, state: inout TestAppState) {
     }
 }
 
-func nonEquatableReducer(action: DefaultStoreAction, state: inout TestNonEquatableState) {
-    guard case .any(let inner) = action else { return }
-    if let action = inner as? SetNonEquatableAction {
+func nonEquatableReducer(action: any Action, state: inout TestNonEquatableState) {
+    if let action = action as? SetNonEquatableAction {
         state.payload = NonEquatablePayload(value: action.value)
     }
 }
@@ -201,13 +199,13 @@ final class DispatchingSubscriber: StoreSubscriber {
     }
 }
 
-final class DeinitObservingStore<State>: BatchStore<State, DefaultStoreAction>, @unchecked Sendable {
+final class DeinitObservingStore<State: Sendable>: BatchStore<State, any Action>, @unchecked Sendable {
     private let onDeinit: () -> Void
 
     init(
-        reducer: @escaping Reducer<State, DefaultStoreAction>,
+        reducer: @escaping DefaultReducer<State>,
         state: State?,
-        middleware: [Middleware<State, DefaultStoreAction>] = [],
+        middleware: [DefaultMiddleware<State>] = [],
         automaticallySkipsRepeats: Bool = true,
         batchingWindow: TimeInterval? = nil,
         onDeinit: @escaping () -> Void
@@ -218,16 +216,18 @@ final class DeinitObservingStore<State>: BatchStore<State, DefaultStoreAction>, 
             state: state,
             middleware: middleware,
             automaticallySkipsRepeats: automaticallySkipsRepeats,
-            batchingWindow: batchingWindow
+            batchingWindow: batchingWindow,
+            actionMapper: { $0 }
         )
     }
 
     required init(
-        reducer: @escaping Reducer<State, DefaultStoreAction>,
+        reducer: @escaping Reducer<State, any Action>,
         state: State?,
-        middleware: [Middleware<State, DefaultStoreAction>] = [],
+        middleware: [Middleware<State, any Action>] = [],
         automaticallySkipsRepeats: Bool = true,
-        batchingWindow: TimeInterval? = nil
+        batchingWindow: TimeInterval? = nil,
+        actionMapper: @escaping @Sendable (any Action) -> (any Action)?
     ) {
         self.onDeinit = {}
         super.init(
@@ -235,7 +235,8 @@ final class DeinitObservingStore<State>: BatchStore<State, DefaultStoreAction>, 
             state: state,
             middleware: middleware,
             automaticallySkipsRepeats: automaticallySkipsRepeats,
-            batchingWindow: batchingWindow
+            batchingWindow: batchingWindow,
+            actionMapper: actionMapper
         )
     }
 

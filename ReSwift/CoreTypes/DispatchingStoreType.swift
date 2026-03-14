@@ -20,5 +20,5 @@ public protocol DispatchingStoreType {
 
      - parameter action: The action that is being dispatched to the store
      */
-    func dispatch(_ action: Action)
+    func dispatch(_ action: any Action)
 }

@@ -69,7 +69,7 @@ final class BatchStoreMemoryBenchmarks: XCTestCase {
     }
 }
 
-private struct LargeMemoryState: Equatable {
+private struct LargeMemoryState: Equatable, Sendable {
     var payload: [[UInt8]]
     var version: Int
 
@@ -91,9 +91,8 @@ private struct MutateSingleBlobAction: Action {
     let seed: Int
 }
 
-private func largeMemoryReducer(action: DefaultStoreAction, state: inout LargeMemoryState) {
-    guard case .any(let inner) = action else { return }
-    switch inner {
+private func largeMemoryReducer(action: any Action, state: inout LargeMemoryState) {
+    switch action {
     case let action as ReplaceLargePayloadAction:
         state.payload = action.payload
         state.version = (action.payload.first?.first).map(Int.init) ?? state.version

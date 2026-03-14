@@ -6,21 +6,14 @@
 //  Copyright © 2015 ReSwift Community. All rights reserved.
 //
 
-/// All actions that want to be able to be dispatched to a store need to conform to this protocol
-/// Currently it is just a marker protocol with no requirements.
-public protocol Action { }
+/// All actions that want to be able to be dispatched to a store need to conform to this protocol.
+/// Actions are required to be `Sendable` so stores and middleware can safely move them through
+/// `@Sendable` execution paths.
+public protocol Action: Sendable { }
 
 /// Initial Action that is dispatched as soon as the store is created.
 /// Reducers respond to this action by configuring their initial state.
 public struct ReSwiftInit: Action {}
-
-/// Default ActionType for BatchStore when no specific action enum is specified.
-/// Enables `BatchStore<State>` as shorthand for `BatchStore<State, DefaultStoreAction>`.
-/// Wraps any `Action` so reducers and middleware can use a single action type.
-public enum DefaultStoreAction: Action {
-    case any(any Action)
-}
-
 
 public protocol BatchedKeyedAction: Action {
     var batchKey: String { get }

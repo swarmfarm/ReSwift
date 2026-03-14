@@ -1,32 +1,47 @@
 import XCTest
 @testable import ReSwift
 
-private final class WeakStoreBox<State>: @unchecked Sendable {
+private final class WeakStoreBox<State: Sendable>: @unchecked Sendable {
     weak var store: Store<State>?
 }
 
 final class BatchStoreDispatchTests: XCTestCase {
+    func testTypedStoreIgnoresActionsOfTheWrongType() {
+        struct TypedState: Equatable, Sendable {
+            var value: Int = 0
+        }
+        struct TypedAction: Action {
+            let value: Int
+        }
+        struct WrongAction: Action {
+            let value: Int
+        }
+
+        let store = BatchStore<TypedState, TypedAction>(
+            reducer: { action, state in
+                state.value = action.value
+            },
+            state: TypedState()
+        )
+
+        store.dispatch(WrongAction(value: 99))
+
+        XCTAssertEqual(store.state.value, 0)
+    }
+
     func testMiddlewareDecoratesActionsInOrder() {
-        let first: Middleware<TestAppState, DefaultStoreAction> = { _, _ in
-            { next in
-                { action in
-                    if case .any(let inner) = action, let labelAction = inner as? SetLabelAction {
-                        next(.any(SetLabelAction(value: labelAction.value + " First")))
-                    } else {
-                        next(action)
-                    }
-                }
+        let first: DefaultMiddleware<TestAppState> = { action, context in
+            if let labelAction = action as? SetLabelAction {
+                context.next(SetLabelAction(value: labelAction.value + " First"))
+            } else {
+                context.next(action)
             }
         }
-        let second: Middleware<TestAppState, DefaultStoreAction> = { _, _ in
-            { next in
-                { action in
-                    if case .any(let inner) = action, let labelAction = inner as? SetLabelAction {
-                        next(.any(SetLabelAction(value: labelAction.value + " Second")))
-                    } else {
-                        next(action)
-                    }
-                }
+        let second: DefaultMiddleware<TestAppState> = { action, context in
+            if let labelAction = action as? SetLabelAction {
+                context.next(SetLabelAction(value: labelAction.value + " Second"))
+            } else {
+                context.next(action)
             }
         }
         let store = Store(
@@ -41,15 +56,11 @@ final class BatchStoreDispatchTests: XCTestCase {
     }
 
     func testMiddlewareCanDispatchAdditionalActions() {
-        let middleware: Middleware<TestAppState, DefaultStoreAction> = { dispatch, _ in
-            { next in
-                { action in
-                    if case .any(let inner) = action, let valueAction = inner as? SetValueAction {
-                        dispatch(.any(SetLabelAction(value: "\(valueAction.value ?? 0)")))
-                    }
-                    next(action)
-                }
+        let middleware: DefaultMiddleware<TestAppState> = { action, context in
+            if let valueAction = action as? SetValueAction {
+                context.dispatch(SetLabelAction(value: "\(valueAction.value ?? 0)"))
             }
+            context.next(action)
         }
         let store = Store(
             reducer: appReducer,
@@ -64,20 +75,12 @@ final class BatchStoreDispatchTests: XCTestCase {
     }
 
     func testMiddlewareCanReadStateAndSwallowAction() {
-        let middleware: Middleware<TestAppState, DefaultStoreAction> = { dispatch, getState in
-            { next in
-                { action in
-                    if case .any(let inner) = action {
-                        if getState()?.label == "OK", (inner as? SetLabelAction)?.value != "Blocked" {
-                            dispatch(.any(SetLabelAction(value: "Blocked")))
-                            next(.any(NoOpAction()))
-                        } else {
-                            next(action)
-                        }
-                    } else {
-                        next(action)
-                    }
-                }
+        let middleware: DefaultMiddleware<TestAppState> = { action, context in
+            if context.getState()?.label == "OK", (action as? SetLabelAction)?.value != "Blocked" {
+                context.dispatch(SetLabelAction(value: "Blocked"))
+                context.next(NoOpAction())
+            } else {
+                context.next(action)
             }
         }
         let store = Store(
@@ -94,15 +97,11 @@ final class BatchStoreDispatchTests: XCTestCase {
     func testMiddlewareCanBeReplacedAfterInit() {
         let store = Store(reducer: appReducer, state: TestAppState())
 
-        store.middleware = [{ _, _ in
-            { next in
-                { action in
-                    if case .any(let inner) = action, let labelAction = inner as? SetLabelAction {
-                        next(.any(SetLabelAction(value: labelAction.value + " Added")))
-                    } else {
-                        next(action)
-                    }
-                }
+        store.middleware = [{ action, context in
+            if let labelAction = action as? SetLabelAction {
+                context.next(SetLabelAction(value: labelAction.value + " Added"))
+            } else {
+                context.next(action)
             }
         }]
         store.dispatch(SetLabelAction(value: "One"))
@@ -259,7 +258,7 @@ final class BatchStoreDispatchTests: XCTestCase {
         let weakStore = WeakStoreBox<TestAppState>()
         let store = Store<TestAppState>(
             reducer: { action, state in
-                guard case .any(let inner) = action, inner is SetValueAction else { return }
+                guard action is SetValueAction else { return }
                 MainActor.assumeIsolated {
                     self.expectFatalError(expectedMessage:
                         "ReSwift:ConcurrentMutationError- Action has been dispatched while a previous action is being processed. A reducer is dispatching an action, or ReSwift is used in a concurrent context (e.g. from multiple threads). Action: SetValueAction(value: Optional(20))"
