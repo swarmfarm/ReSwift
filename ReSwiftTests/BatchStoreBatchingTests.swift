@@ -53,30 +53,13 @@ final class BatchStoreBatchingTests: XCTestCase {
         XCTAssertEqual(store.state.log, ["first", "second", "third"])
     }
 
-    func testKeyedBatchedActionsKeepOnlyLatestValueForSameKey() {
-        let store = Store(reducer: appReducer, state: TestAppState(), batchingWindow: 0.05)
-        let completion = expectation(description: "keyed batch reduced")
-        let subscriber = ClosureSubscriber<TestAppState> { state in
-            if state.testValue == 9 {
-                completion.fulfill()
-            }
-        }
-        store.subscribe(subscriber)
-
-        store.dispatchBatched(KeyedValueAction(batchKey: "main", value: 1))
-        store.dispatchBatched(KeyedValueAction(batchKey: "main", value: 9))
-
-        wait(for: [completion], timeout: 1.0)
-        XCTAssertEqual(store.state.testValue, 9)
-    }
-
-    func testKeyedAndUnkeyedBatchedActionsFlushTogetherWithSingleNotification() {
+    func testBatchedActionsFlushTogetherWithSingleNotification() {
         let store = Store(reducer: appReducer, state: TestAppState(), batchingWindow: 0.05)
         let subscriber = RecordingSubscriber<TestAppState>()
 
         store.subscribe(subscriber)
         store.dispatchBatched(AppendLogAction(value: "one"))
-        store.dispatchBatched(KeyedValueAction(batchKey: "main", value: 5))
+        store.dispatchBatched(SetValueAction(value: 5))
 
         let completion = expectation(description: "flush complete")
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {

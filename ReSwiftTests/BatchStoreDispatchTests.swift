@@ -6,6 +6,10 @@ private final class WeakStoreBox<State: Sendable>: @unchecked Sendable {
 }
 
 final class BatchStoreDispatchTests: XCTestCase {
+    private final class EscapedContextBox: @unchecked Sendable {
+        var context: MiddlewareContext<TestAppState, any Action>?
+    }
+
     func testTypedStoreIgnoresActionsOfTheWrongType() {
         struct TypedState: Equatable, Sendable {
             var value: Int = 0
@@ -94,22 +98,34 @@ final class BatchStoreDispatchTests: XCTestCase {
         XCTAssertEqual(store.state.label, "Blocked")
     }
 
-    func testMiddlewareCanBeReplacedAfterInit() {
-        let store = Store(reducer: appReducer, state: TestAppState())
-
-        store.middleware = [{ action, context in
-            if let labelAction = action as? SetLabelAction {
-                context.next(SetLabelAction(value: labelAction.value + " Added"))
-            } else {
-                context.next(action)
+    func testMiddlewareContextCanEscapeAndDispatchLater() {
+        let box = EscapedContextBox()
+        let completion = expectation(description: "escaped context dispatched action")
+        let middleware: DefaultMiddleware<TestAppState> = { action, context in
+            if action is NoOpAction {
+                box.context = context
             }
-        }]
-        store.dispatch(SetLabelAction(value: "One"))
-        XCTAssertEqual(store.state.label, "One Added")
+            context.next(action)
+        }
+        let store = Store(
+            reducer: appReducer,
+            state: TestAppState(),
+            middleware: [middleware]
+        )
+        let subscriber = ClosureSubscriber<TestAppState> { state in
+            if state.label == "Escaped" {
+                completion.fulfill()
+            }
+        }
+        store.subscribe(subscriber)
 
-        store.middleware = []
-        store.dispatch(SetLabelAction(value: "Two"))
-        XCTAssertEqual(store.state.label, "Two")
+        store.dispatch(NoOpAction())
+        dispatchAsync {
+            box.context?.dispatch(SetLabelAction(value: "Escaped"))
+        }
+
+        wait(for: [completion], timeout: 1.0)
+        XCTAssertEqual(store.state.label, "Escaped")
     }
 
     func testActionCreatorDispatchesReturnedAction() {
@@ -193,6 +209,60 @@ final class BatchStoreDispatchTests: XCTestCase {
 
         wait(for: [completion], timeout: 1.0)
         XCTAssertEqual(store.state.testValue, 14)
+    }
+
+    func testTypedDispatchOverloadsPreserveBehavior() {
+        struct TypedState: Equatable, Sendable {
+            var value = 0
+        }
+        struct TypedAction: Action {
+            let value: Int
+        }
+
+        let store = BatchStore<TypedState, TypedAction>(
+            reducer: { action, state in
+                state.value = action.value
+            },
+            state: TypedState()
+        )
+        let completion = expectation(description: "typed async dispatched")
+        let subscriber = ClosureSubscriber<TypedState> { state in
+            if state.value == 4 {
+                completion.fulfill()
+            }
+        }
+        store.subscribe(subscriber)
+
+        store.dispatch(TypedAction(value: 1))
+        XCTAssertEqual(store.state.value, 1)
+
+        store.dispatchSync(TypedAction(value: 2))
+        XCTAssertEqual(store.state.value, 2)
+
+        let batched = expectation(description: "typed batched dispatched")
+        let batchedSubscriber = ClosureSubscriber<TypedState> { state in
+            if state.value == 3 {
+                batched.fulfill()
+            }
+        }
+        store.subscribe(batchedSubscriber)
+
+        store.dispatchBatched(TypedAction(value: 3))
+        wait(for: [batched], timeout: 1.0)
+        XCTAssertEqual(store.state.value, 3)
+
+        store.dispatchAsync(TypedAction(value: 4))
+
+        wait(for: [completion], timeout: 1.0)
+        XCTAssertEqual(store.state.value, 4)
+    }
+
+    func testStoreWithStateExposesCurrentValue() {
+        let store = Store(reducer: appReducer, state: TestAppState(testValue: 21))
+
+        let value = store.withState { $0?.testValue }
+
+        XCTAssertEqual(value, 21)
     }
 
     func testDispatchConcurrentUsesConcurrentQueueForSubscriberCallbacks() {

@@ -17,39 +17,52 @@
 import Foundation
 class SubscriptionBox<State> {
     weak var subscriber: AnyStoreSubscriber?
-    private let forward: (State?, State) -> Void
     let requiresOldState: Bool
 
-    init<S: StoreSubscriber>(
-        originalSubscription: Subscription<State>,
-        subscriber: S
-    ) where S.StoreSubscriberStateType == State {
+    init(subscriber: AnyStoreSubscriber?, requiresOldState: Bool) {
         self.subscriber = subscriber
-        self.requiresOldState = originalSubscription.requiresOldState
-        self.forward = { [weak subscriber] _, newState in
-            subscriber?.newState(state: newState)
-        }
+        self.requiresOldState = requiresOldState
     }
 
-    init<SelectedState, S: StoreSubscriber>(
+    @inline(__always)
+    func newValues(oldState: State?, newState: State) {}
+}
+
+final class DirectSubscriptionBox<State, S: StoreSubscriber>: SubscriptionBox<State>, @unchecked Sendable
+where S.StoreSubscriberStateType == State {
+    weak var typedSubscriber: S?
+
+    init(
+        originalSubscription: Subscription<State>,
+        subscriber: S
+    ) {
+        self.typedSubscriber = subscriber
+        super.init(subscriber: subscriber, requiresOldState: originalSubscription.requiresOldState)
+    }
+
+    override func newValues(oldState: State?, newState: State) {
+        typedSubscriber?.newState(state: newState)
+    }
+}
+
+final class TransformedSubscriptionBox<State, SelectedState, S: StoreSubscriber>: SubscriptionBox<State>, @unchecked Sendable
+where S.StoreSubscriberStateType == SelectedState {
+    private let originalSubscription: Subscription<State>
+
+    init(
         originalSubscription: Subscription<State>,
         transformedSubscription: Subscription<SelectedState>,
         subscriber: S
     ) where S.StoreSubscriberStateType == SelectedState {
-        self.subscriber = subscriber
-
-        self.requiresOldState = originalSubscription.requiresOldState
+        self.originalSubscription = originalSubscription
         transformedSubscription.observer = { [weak subscriber] _, newState in
             subscriber?.newState(state: newState)
         }
-        self.forward = { [originalSubscription] oldState, newState in
-            originalSubscription.newValues(oldState: oldState, newState: newState)
-        }
+        super.init(subscriber: subscriber, requiresOldState: originalSubscription.requiresOldState)
     }
 
-    @inline(__always)
-    func newValues(oldState: State?, newState: State) {
-        forward(oldState, newState)
+    override func newValues(oldState: State?, newState: State) {
+        originalSubscription.newValues(oldState: oldState, newState: newState)
     }
 }
 
@@ -163,6 +176,7 @@ public class Subscription<State> {
     }
 
     /// Sends new values over this subscription. Observers will be notified of these new values.
+    @inline(__always)
     func newValues(oldState: State?, newState: State) {
         self.observer?(oldState, newState)
     }

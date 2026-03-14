@@ -136,6 +136,8 @@ Button taps result in dispatched actions that will be handled by the store and i
 
 This is a very basic example that only shows a subset of ReSwift's features, read the Getting Started Guide to see how you can build entire apps with this architecture. For a complete implementation of this example see the [CounterExample](https://github.com/ReSwift/CounterExample) project.
 
+If you are upgrading middleware-heavy code, see the [Migration Guide](Docs/Migration%20Guide.md).
+
 ### Create a subscription of several substates combined
 
 Just create a struct representing the data model needed in the subscriber class, with a constructor that takes the whole app state as a param. Consider this constructor as a mapper/selector from the app state to the subscriber state. Being `MySubState` a struct and conforming to `Equatable`, ReSwift (by default) will not notify the subscriber if the computed output hasn't changed. Also, Swift will be able to infer the type of the subscription.
@@ -297,4 +299,3 @@ If you have any questions, you can find the core team on twitter:
 - [@mjarvis](https://twitter.com/mjarvis)
 
 We also have a [public gitter chat!](https://gitter.im/ReSwift/public)
-

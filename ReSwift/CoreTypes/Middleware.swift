@@ -11,19 +11,54 @@ public typealias DispatchFunction = @Sendable (any Action) -> Void
 /// A typed dispatch function for use in middleware when the store has a specific action type.
 public typealias TypedDispatchFunction<ActionType: Sendable> = @Sendable (consuming ActionType) -> Void
 
-public struct MiddlewareContext<State: Sendable, ActionType: Sendable>: Sendable {
-    public let dispatch: TypedDispatchFunction<ActionType>
-    public let next: TypedDispatchFunction<ActionType>
-    public let getState: @Sendable () -> State?
+@usableFromInline
+class MiddlewareRuntime<State: Sendable, ActionType: Sendable>: @unchecked Sendable {
+    @usableFromInline
+    init() {}
 
-    public init(
-        dispatch: @escaping TypedDispatchFunction<ActionType>,
-        next: @escaping TypedDispatchFunction<ActionType>,
-        getState: @escaping @Sendable () -> State?
-    ) {
-        self.dispatch = dispatch
-        self.next = next
-        self.getState = getState
+    @usableFromInline
+    func send(_ action: consuming ActionType) {
+        fatalError("Override in subclass")
+    }
+
+    @usableFromInline
+    func dispatch(_ action: consuming ActionType) {
+        fatalError("Override in subclass")
+    }
+
+    @usableFromInline
+    func next(_ action: consuming ActionType) {
+        fatalError("Override in subclass")
+    }
+
+    @usableFromInline
+    func getState() -> State? {
+        fatalError("Override in subclass")
+    }
+}
+
+public struct MiddlewareContext<State: Sendable, ActionType: Sendable>: Sendable {
+    @usableFromInline
+    let runtime: MiddlewareRuntime<State, ActionType>
+
+    @usableFromInline
+    init(runtime: MiddlewareRuntime<State, ActionType>) {
+        self.runtime = runtime
+    }
+
+    @inlinable
+    public func dispatch(_ action: consuming ActionType) {
+        runtime.dispatch(action)
+    }
+
+    @inlinable
+    public func next(_ action: consuming ActionType) {
+        runtime.next(action)
+    }
+
+    @inlinable
+    public func getState() -> State? {
+        runtime.getState()
     }
 }
 

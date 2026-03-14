@@ -16,12 +16,69 @@ import os
  */
 public typealias Store<T: Sendable> = BatchStore<T, any Action>
 
-open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
+public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
     typealias SubscriptionType = SubscriptionBox<State>
 
     private struct SubscriptionRecord {
         let id: Int
         let box: SubscriptionType
+    }
+
+    private final class TerminalMiddlewareRuntime: MiddlewareRuntime<State, ActionType>, @unchecked Sendable {
+        weak var store: BatchStore?
+
+        init(store: BatchStore) {
+            self.store = store
+        }
+
+        override func send(_ action: consuming ActionType) {
+            store?._defaultDispatch(action: action)
+        }
+
+        override func dispatch(_ action: consuming ActionType) {
+            store?.dispatchTyped(action, concurrent: false)
+        }
+
+        override func next(_ action: consuming ActionType) {
+            send(action)
+        }
+
+        override func getState() -> State? {
+            store?.state
+        }
+    }
+
+    private final class StageMiddlewareRuntime: MiddlewareRuntime<State, ActionType>, @unchecked Sendable {
+        weak var store: BatchStore?
+        let middleware: Middleware<State, ActionType>
+        let nextRuntime: MiddlewareRuntime<State, ActionType>
+        lazy var context = MiddlewareContext(runtime: self)
+
+        init(
+            store: BatchStore,
+            middleware: @escaping Middleware<State, ActionType>,
+            nextRuntime: MiddlewareRuntime<State, ActionType>
+        ) {
+            self.store = store
+            self.middleware = middleware
+            self.nextRuntime = nextRuntime
+        }
+
+        override func send(_ action: consuming ActionType) {
+            middleware(action, context)
+        }
+
+        override func dispatch(_ action: consuming ActionType) {
+            store?.dispatchTyped(action, concurrent: false)
+        }
+
+        override func next(_ action: consuming ActionType) {
+            nextRuntime.send(action)
+        }
+
+        override func getState() -> State? {
+            store?.state
+        }
     }
 
     private struct UnsafeTransfer<Value>: @unchecked Sendable {
@@ -45,9 +102,8 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         }
     }
 
-    private let actionMapper: @Sendable (any Action) -> ActionType?
     private let reducer: Reducer<State, ActionType>
-    private var compiledDispatch: TypedDispatchFunction<ActionType>!
+    private var compiledMiddleware: MiddlewareRuntime<State, ActionType>! = nil
 
     private(set) public var state: State!
 
@@ -64,14 +120,14 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
 
     private var _batchingWindow: TimeInterval? = nil
     private var _isBatching = false
-    private var _batchedActions: [ActionType] = []
-    private var _keyedBatchedActions: [String: ActionType] = [:]
+    private var _batchedActions: ContiguousArray<ActionType> = []
 
     public private(set) lazy var dispatchFunction: DispatchFunction! = createDispatchFunction()
 
     private var subscriptionsLock = NSLock()
     private var _subscriptions: [SubscriptionRecord] = []
     private var nextSubscriptionID = 0
+    private var subscriptionsRequiringOldState = 0
     var subscriptions: [SubscriptionType] {
         subscriptionsLock.lock()
         defer { subscriptionsLock.unlock() }
@@ -82,21 +138,14 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
     private var isDispatching = false
 
     fileprivate let subscriptionsAutomaticallySkipRepeats: Bool
-
-    public var middleware: [Middleware<State, ActionType>] {
-        didSet {
-            compiledDispatch = createTypedDispatchFunction()
-            dispatchFunction = createDispatchFunction()
-        }
-    }
+    public let middleware: [Middleware<State, ActionType>]
 
     public required init(
         reducer: @escaping Reducer<State, ActionType>,
         state: State?,
         middleware: [Middleware<State, ActionType>] = [],
         automaticallySkipsRepeats: Bool = true,
-        batchingWindow: TimeInterval? = nil,
-        actionMapper: @escaping @Sendable (any Action) -> ActionType?
+        batchingWindow: TimeInterval? = nil
     ) {
         self.reducer = reducer
         self.state = state
@@ -104,80 +153,29 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         self.subscriptionsAutomaticallySkipRepeats = automaticallySkipsRepeats
         self.batchingWindow = batchingWindow
         self._batchingWindow = batchingWindow
-        self.actionMapper = actionMapper
-        self.compiledDispatch = createTypedDispatchFunction()
+        self.compiledMiddleware = createMiddlewareRuntime()
     }
 
-    public convenience init(
-        reducer: @escaping Reducer<State, ActionType>,
-        state: State?,
-        middleware: [Middleware<State, ActionType>] = [],
-        automaticallySkipsRepeats: Bool = true,
-        batchingWindow: TimeInterval? = nil
-    ) where ActionType: Action {
-        self.init(
-            reducer: reducer,
-            state: state,
-            middleware: middleware,
-            automaticallySkipsRepeats: automaticallySkipsRepeats,
-            batchingWindow: batchingWindow,
-            actionMapper: { $0 as? ActionType }
-        )
+    @inlinable
+    public func withState<Result>(_ body: (State?) throws -> Result) rethrows -> Result {
+        try body(state)
     }
 
-    public convenience init(
-        reducer: @escaping DefaultReducer<State>,
-        state: State?,
-        middleware: [DefaultMiddleware<State>] = [],
-        automaticallySkipsRepeats: Bool = true,
-        batchingWindow: TimeInterval? = nil
-    ) where ActionType == any Action {
-        self.init(
-            reducer: reducer,
-            state: state,
-            middleware: middleware,
-            automaticallySkipsRepeats: automaticallySkipsRepeats,
-            batchingWindow: batchingWindow,
-            actionMapper: { $0 }
-        )
-    }
-
-    private func createTypedDispatchFunction() -> TypedDispatchFunction<ActionType> {
-        let terminal: TypedDispatchFunction<ActionType> = { [unowned self] action in
-            self._defaultDispatch(action: action)
-        }
-
-        guard !middleware.isEmpty else {
-            return terminal
-        }
-
-        let dispatch: TypedDispatchFunction<ActionType> = { [weak self] action in
-            self?.dispatchTyped(action, concurrent: false)
-        }
-        let getState: @Sendable () -> State? = { [weak self] in
-            self?.state
-        }
-
-        var next = terminal
+    private func createMiddlewareRuntime() -> MiddlewareRuntime<State, ActionType> {
+        var nextRuntime: MiddlewareRuntime<State, ActionType> = TerminalMiddlewareRuntime(store: self)
         for middleware in middleware.reversed() {
-            let nextStage = next
-            let context = MiddlewareContext(
-                dispatch: dispatch,
-                next: nextStage,
-                getState: getState
+            nextRuntime = StageMiddlewareRuntime(
+                store: self,
+                middleware: middleware,
+                nextRuntime: nextRuntime
             )
-            next = { action in
-                middleware(action, context)
-            }
         }
-        return next
+        return nextRuntime
     }
 
     private func createDispatchFunction() -> DispatchFunction {
-        let compiledDispatch = self.compiledDispatch!
         return { [unowned self] action in
-            guard let typed = self.actionMapper(action) else { return }
-            compiledDispatch(typed)
+            self.dispatch(action)
         }
     }
 
@@ -194,18 +192,21 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
 
         subscriptionsLock.lock()
         _subscriptions.append(SubscriptionRecord(id: nextSubscriptionID, box: subscriptionBox))
+        if subscriptionBox.requiresOldState {
+            subscriptionsRequiringOldState += 1
+        }
         nextSubscriptionID &+= 1
         subscriptionsLock.unlock()
 
         originalSubscription.newValues(oldState: nil, newState: state)
     }
 
-    open func subscribe<S: StoreSubscriber>(_ subscriber: S)
+    public func subscribe<S: StoreSubscriber>(_ subscriber: S)
         where S.StoreSubscriberStateType == State {
         subscribe(subscriber, transform: nil)
     }
 
-    open func subscribe<SelectedState, S: StoreSubscriber>(
+    public func subscribe<SelectedState, S: StoreSubscriber>(
         _ subscriber: S,
         transform: ((Subscription<State>) -> Subscription<SelectedState>)?
     ) where S.StoreSubscriberStateType == SelectedState {
@@ -224,7 +225,7 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         transformedSubscription: Subscription<State>?,
         subscriber: S
     ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == State {
-        SubscriptionBox(
+        DirectSubscriptionBox(
             originalSubscription: originalSubscription,
             subscriber: subscriber
         )
@@ -235,14 +236,14 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         transformedSubscription: Subscription<T>?,
         subscriber: S
     ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == T {
-        SubscriptionBox(
+        TransformedSubscriptionBox(
             originalSubscription: originalSubscription,
             transformedSubscription: transformedSubscription!,
             subscriber: subscriber
         )
     }
 
-    open func unsubscribe(_ subscriber: AnyStoreSubscriber) {
+    public func unsubscribe(_ subscriber: AnyStoreSubscriber) {
         runSync { [weak self] in
             self?.removeFirstSubscription(for: subscriber)
         }
@@ -261,6 +262,9 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         defer { subscriptionsLock.unlock() }
 
         if let index = _subscriptions.firstIndex(where: { $0.box.subscriber === subscriber }) {
+            if _subscriptions[index].box.requiresOldState {
+                subscriptionsRequiringOldState &-= 1
+            }
             _subscriptions[index].box.subscriber = nil
             _subscriptions.remove(at: index)
         }
@@ -273,6 +277,9 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         subscriptionsLock.lock()
         _subscriptions.removeAll { record in
             if idSet.contains(record.id) {
+                if record.box.requiresOldState {
+                    subscriptionsRequiringOldState &-= 1
+                }
                 record.box.subscriber = nil
                 return true
             }
@@ -341,8 +348,10 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         removeSubscriptions(withIDs: subscriptionsToRemove.snapshot())
     }
 
-    private func shouldCapturePreviousState(for snapshot: [SubscriptionRecord]) -> Bool {
-        snapshot.contains { $0.box.requiresOldState }
+    private func shouldCapturePreviousState() -> Bool {
+        subscriptionsLock.lock()
+        defer { subscriptionsLock.unlock() }
+        return subscriptionsRequiringOldState > 0
     }
 
     private func notifySubscriptions(
@@ -364,7 +373,12 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         String(describing: action)
     }
 
-    open func _defaultDispatch(action: ActionType) {
+    @inline(__always)
+    private func typedAction(from action: any Action) -> ActionType? {
+        action as? ActionType
+    }
+
+    public func _defaultDispatch(action: ActionType) {
         isDispatchingLock.lock()
         guard !isDispatching else {
             isDispatchingLock.unlock()
@@ -390,22 +404,30 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
 
         let snapshot = subscriptionSnapshot()
         guard !snapshot.isEmpty else {
-            compiledDispatch(action)
+            compiledMiddleware.send(action)
             return
         }
 
-        let currentState = shouldCapturePreviousState(for: snapshot) ? state! : nil
-        compiledDispatch(action)
+        let currentState = shouldCapturePreviousState() ? state! : nil
+        compiledMiddleware.send(action)
         notifySubscriptions(snapshot: snapshot, previousState: currentState, concurrent: concurrent)
     }
 
     public func dispatch(_ action: any Action, concurrent: Bool = false) {
-        guard let typed = actionMapper(action) else { return }
+        guard let typed = typedAction(from: action) else { return }
         dispatchTyped(typed, concurrent: concurrent)
+    }
+
+    public func dispatch(_ action: consuming ActionType, concurrent: Bool = false) where ActionType: Action {
+        dispatchTyped(action, concurrent: concurrent)
     }
 
     public func dispatch(_ action: any Action) {
         dispatch(action, concurrent: false)
+    }
+
+    public func dispatch(_ action: consuming ActionType) where ActionType: Action {
+        dispatchTyped(action, concurrent: false)
     }
 
     let queueKey = DispatchSpecificKey<Int>()
@@ -428,13 +450,24 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         return value
     }()
 
-    open func dispatchSync(_ action: any Action, concurrent: Bool = true) {
+    public func dispatchSync(_ action: any Action, concurrent: Bool = true) {
         if !isOnStoreQueue {
             queue.sync { [weak self] in
                 self?.dispatch(action, concurrent: concurrent)
             }
         } else {
             dispatch(action, concurrent: false)
+        }
+    }
+
+    public func dispatchSync(_ action: consuming ActionType, concurrent: Bool = true) where ActionType: Action {
+        if !isOnStoreQueue {
+            let action = UnsafeTransfer(value: action)
+            queue.sync { [weak self] in
+                self?.dispatchTyped(action.value, concurrent: concurrent)
+            }
+        } else {
+            dispatchTyped(action, concurrent: false)
         }
     }
 
@@ -446,50 +479,63 @@ open class BatchStore<State: Sendable, ActionType: Sendable>: StoreType {
         }
     }
 
-    open func dispatchAsync(_ action: any Action, concurrent: Bool = false) {
+    public func dispatchAsync(_ action: any Action, concurrent: Bool = false) {
         let action = UnsafeTransfer(value: action)
         queue.async { [weak self] in
             self?.dispatch(action.value, concurrent: concurrent)
         }
     }
 
-    open func dispatchBatched(_ action: any Action) {
+    public func dispatchAsync(_ action: consuming ActionType, concurrent: Bool = false) where ActionType: Action {
+        let action = UnsafeTransfer(value: action)
+        queue.async { [weak self] in
+            self?.dispatchTyped(action.value, concurrent: concurrent)
+        }
+    }
+
+    public func dispatchBatched(_ action: any Action) {
         let action = UnsafeTransfer(value: action)
         batchingQueue.async { [weak self] in
             guard let self else { return }
-            guard let typed = self.actionMapper(action.value) else { return }
+            guard let typed = self.typedAction(from: action.value) else { return }
 
-            if let batchingWindow = self._batchingWindow {
-                if let keyed = typed as? any BatchedKeyedAction {
-                    self._keyedBatchedActions[keyed.batchKey] = typed
-                } else {
-                    self._batchedActions.append(typed)
-                }
+            self.enqueueBatchedAction(typed)
+        }
+    }
 
-                if !self._isBatching {
-                    self._isBatching = true
-                    self.batchingQueue.asyncAfter(deadline: .now() + batchingWindow) { [weak self] in
-                        guard let self else { return }
-                        guard let currentState = self.state else { return }
+    public func dispatchBatched(_ action: consuming ActionType) where ActionType: Action {
+        let action = UnsafeTransfer(value: action)
+        batchingQueue.async { [weak self] in
+            self?.enqueueBatchedAction(action.value)
+        }
+    }
 
-                        for action in self._batchedActions {
-                            self.compiledDispatch(action)
-                        }
-                        for action in self._keyedBatchedActions.values {
-                            self.compiledDispatch(action)
-                        }
-                        self._batchedActions = []
-                        self._keyedBatchedActions = [:]
-
-                        let snapshot = self.subscriptionSnapshot()
-                        let previousState = self.shouldCapturePreviousState(for: snapshot) ? currentState : nil
-                        self.notifySubscriptions(snapshot: snapshot, previousState: previousState)
-                        self._isBatching = false
-                    }
-                }
-            } else {
-                self.dispatchTyped(typed, concurrent: false)
+    private func enqueueBatchedAction(_ action: ActionType) {
+        if let batchingWindow = _batchingWindow {
+            if _batchedActions.isEmpty {
+                _batchedActions.reserveCapacity(16)
             }
+            _batchedActions.append(action)
+
+            if !_isBatching {
+                _isBatching = true
+                batchingQueue.asyncAfter(deadline: .now() + batchingWindow) { [weak self] in
+                    guard let self else { return }
+                    guard let currentState = self.state else { return }
+
+                    for action in self._batchedActions {
+                        self.compiledMiddleware.send(action)
+                    }
+                    self._batchedActions = []
+
+                    let snapshot = self.subscriptionSnapshot()
+                    let previousState = self.shouldCapturePreviousState() ? currentState : nil
+                    self.notifySubscriptions(snapshot: snapshot, previousState: previousState)
+                    self._isBatching = false
+                }
+            }
+        } else {
+            dispatchTyped(action, concurrent: false)
         }
     }
 

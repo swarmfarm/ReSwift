@@ -355,26 +355,34 @@ ReSwift supports middleware in the same way as Redux does. You can read this gre
 Let's take a look at a quick example that shows how `ReSwift` supports Redux-style middleware. This example middleware prints all actions to the console:
 
 ```swift
-let loggingMiddleware: Middleware<Any> = { dispatch, getState in
-    return { next in
-        return { action in
-            // perform middleware logic
-            print(action)
-
-            // call next middleware
-            return next(action)
-        }
-    }
+let loggingMiddleware: DefaultMiddleware<AppState> = { action, context in
+    print(action)
+    context.next(action)
 }
 ```
 
-The generic `Any` in middleware refers to the return type in `getState`, and needs to be compatible with the `State` associated type in your `Store`.
+Middleware can still read state and dispatch additional actions:
+
+```swift
+let loadingMiddleware: DefaultMiddleware<AppState> = { action, context in
+    let shouldLoad = context.getState()?.items.isEmpty ?? false
+    if shouldLoad {
+        context.dispatch(LoadItemsAction())
+    }
+    context.next(action)
+}
+```
 
 You specify the middleware you would like to use when creating your store:
 
 ```swift
-Store(reducer: reducer, appState: TestStringAppState(),
-                    middleware: [loggingMiddleware, secondMiddleware])
+Store(
+    reducer: reducer,
+    state: TestStringAppState(),
+    middleware: [loggingMiddleware, secondMiddleware]
+)
 ```
 
 The actions will pass through the middleware in the order in which they are arranged in the array passed to the store initializer. However, ideally middleware should not make any assumptions about when exactly it is called.
+
+For advanced migration details, see the [Migration Guide](Migration%20Guide.md).

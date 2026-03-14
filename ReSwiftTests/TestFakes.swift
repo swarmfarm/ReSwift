@@ -71,11 +71,6 @@ struct SetNonEquatableAction: Action {
     let value: String
 }
 
-struct KeyedValueAction: BatchedKeyedAction {
-    let batchKey: String
-    let value: Int?
-}
-
 func appReducer(action: any Action, state: inout TestAppState) {
     switch action {
     case let action as SetValueAction:
@@ -88,8 +83,6 @@ func appReducer(action: any Action, state: inout TestAppState) {
         state.nested.value = action.value
     case let action as AppendLogAction:
         state.log.append(action.value)
-    case let action as KeyedValueAction:
-        state.testValue = action.value
     default:
         break
     }
@@ -199,8 +192,21 @@ final class DispatchingSubscriber: StoreSubscriber {
     }
 }
 
-final class DeinitObservingStore<State: Sendable>: BatchStore<State, any Action>, @unchecked Sendable {
+final class DeinitObserver: @unchecked Sendable {
     private let onDeinit: () -> Void
+
+    init(onDeinit: @escaping () -> Void) {
+        self.onDeinit = onDeinit
+    }
+
+    deinit {
+        onDeinit()
+    }
+}
+
+final class OwnedStore<State: Sendable>: @unchecked Sendable {
+    let observer: DeinitObserver
+    let store: Store<State>
 
     init(
         reducer: @escaping DefaultReducer<State>,
@@ -210,37 +216,13 @@ final class DeinitObservingStore<State: Sendable>: BatchStore<State, any Action>
         batchingWindow: TimeInterval? = nil,
         onDeinit: @escaping () -> Void
     ) {
-        self.onDeinit = onDeinit
-        super.init(
+        self.observer = DeinitObserver(onDeinit: onDeinit)
+        self.store = Store(
             reducer: reducer,
             state: state,
             middleware: middleware,
             automaticallySkipsRepeats: automaticallySkipsRepeats,
-            batchingWindow: batchingWindow,
-            actionMapper: { $0 }
+            batchingWindow: batchingWindow
         )
-    }
-
-    required init(
-        reducer: @escaping Reducer<State, any Action>,
-        state: State?,
-        middleware: [Middleware<State, any Action>] = [],
-        automaticallySkipsRepeats: Bool = true,
-        batchingWindow: TimeInterval? = nil,
-        actionMapper: @escaping @Sendable (any Action) -> (any Action)?
-    ) {
-        self.onDeinit = {}
-        super.init(
-            reducer: reducer,
-            state: state,
-            middleware: middleware,
-            automaticallySkipsRepeats: automaticallySkipsRepeats,
-            batchingWindow: batchingWindow,
-            actionMapper: actionMapper
-        )
-    }
-
-    deinit {
-        onDeinit()
     }
 }

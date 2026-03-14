@@ -32,7 +32,7 @@ final class BatchStoreCoreTests: XCTestCase {
         let deinitExpectation = expectation(description: "store deinitialized")
 
         autoreleasepool {
-            _ = DeinitObservingStore(
+            _ = OwnedStore(
                 reducer: appReducer,
                 state: TestAppState(),
                 onDeinit: { deinitExpectation.fulfill() }
