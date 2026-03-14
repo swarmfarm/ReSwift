@@ -87,7 +87,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
     private final class RemovalBuffer: @unchecked Sendable {
         private let lock = NSLock()
-        private var ids: [Int] = []
+        private var ids: ContiguousArray<Int> = []
 
         func append(_ id: Int) {
             lock.lock()
@@ -103,7 +103,7 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
 
         func snapshot() -> [Int] {
             lock.lock()
-            let snapshot = ids
+            let snapshot = Array(ids)
             lock.unlock()
             return snapshot
         }
@@ -207,13 +207,29 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         subscriptionsLock.unlock()
 
         if let state {
-            originalSubscription.newValues(oldState: nil, newState: state)
+            subscriptionBox.newValues(oldState: nil, newState: state)
+        }
+    }
+
+    fileprivate func _subscribeDirect<S: StoreSubscriber>(_ subscriber: S)
+        where S.StoreSubscriberStateType == State {
+        let subscriptionBox = DirectSubscriptionBox(subscriber: subscriber)
+
+        subscriptionsLock.lock()
+        _subscriptions.append(SubscriptionRecord(id: nextSubscriptionID, box: subscriptionBox))
+        nextSubscriptionID &+= 1
+        subscriptionsLock.unlock()
+
+        if let state {
+            subscriptionBox.newValues(oldState: nil, newState: state)
         }
     }
 
     public func subscribe<S: StoreSubscriber>(_ subscriber: S)
         where S.StoreSubscriberStateType == State {
-        subscribe(subscriber, transform: nil)
+        runSync { [weak self] in
+            self?._subscribeDirect(subscriber)
+        }
     }
 
     public func subscribe<SelectedState, S: StoreSubscriber>(
@@ -233,14 +249,22 @@ public final class BatchStore<State: Sendable, ActionType: Sendable>: StoreType 
         }
     }
 
+    func subscriptionBox<S: StoreSubscriber>(
+        originalSubscription: Subscription<State>,
+        transformedSubscription: Subscription<State>?,
+        subscriber: S
+    ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == State {
+        DirectSubscriptionBox(subscriber: subscriber)
+    }
+
     func subscriptionBox<T, S: StoreSubscriber>(
         originalSubscription: Subscription<State>,
         transformedSubscription: Subscription<T>?,
         subscriber: S
     ) -> SubscriptionBox<State> where S.StoreSubscriberStateType == T {
-        SubscriptionBox(
+        TransformedSubscriptionBox(
             originalSubscription: originalSubscription,
-            transformedSubscription: transformedSubscription,
+            transformedSubscription: transformedSubscription!,
             subscriber: subscriber
         )
     }

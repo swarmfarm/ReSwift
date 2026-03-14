@@ -9,30 +9,49 @@
 import Foundation
 
 class SubscriptionBox<State> {
-    private let originalSubscription: Subscription<State>
     weak var subscriber: AnyStoreSubscriber?
 
-    init<T>(
-        originalSubscription: Subscription<State>,
-        transformedSubscription: Subscription<T>?,
-        subscriber: AnyStoreSubscriber
-    ) {
-        self.originalSubscription = originalSubscription
+    init(subscriber: AnyStoreSubscriber?) {
         self.subscriber = subscriber
-
-        if let transformedSubscription {
-            transformedSubscription.observer = { [weak self] _, newState in
-                self?.subscriber?._newState(state: newState as Any)
-            }
-        } else {
-            originalSubscription.observer = { [weak self] _, newState in
-                self?.subscriber?._newState(state: newState as Any)
-            }
-        }
     }
 
     @inline(__always)
-    func newValues(oldState: State?, newState: State) {
+    func newValues(oldState: State?, newState: State) {}
+}
+
+final class DirectSubscriptionBox<State, S: StoreSubscriber>: SubscriptionBox<State>, @unchecked Sendable
+where S.StoreSubscriberStateType == State {
+    weak var typedSubscriber: S?
+
+    init(subscriber: S) {
+        self.typedSubscriber = subscriber
+        super.init(subscriber: subscriber)
+    }
+
+    @inline(__always)
+    override func newValues(oldState: State?, newState: State) {
+        typedSubscriber?.newState(state: newState)
+    }
+}
+
+final class TransformedSubscriptionBox<State, SelectedState, S: StoreSubscriber>: SubscriptionBox<State>, @unchecked Sendable
+where S.StoreSubscriberStateType == SelectedState {
+    private let originalSubscription: Subscription<State>
+
+    init(
+        originalSubscription: Subscription<State>,
+        transformedSubscription: Subscription<SelectedState>,
+        subscriber: S
+    ) {
+        self.originalSubscription = originalSubscription
+        transformedSubscription.observer = { [weak subscriber] _, newState in
+            subscriber?.newState(state: newState)
+        }
+        super.init(subscriber: subscriber)
+    }
+
+    @inline(__always)
+    override func newValues(oldState: State?, newState: State) {
         originalSubscription.newValues(oldState: oldState, newState: newState)
     }
 }
